@@ -131,15 +131,22 @@ ssreflect/ssrfun.v
 ssreflect/ssrnat.v
 ssreflect/tuple.v
 ssrtest/absevarprop.v
+ssrtest/abstract_var2.v
+ssrtest/acrobatic.v
 ssrtest/binders_of.v
 ssrtest/binders.v
 ssrtest/caseview.v
 ssrtest/congr.v
+ssrtest/custom_tacview.v
 ssrtest/deferclear.v
 ssrtest/dependent_type_err.v
+ssrtest/derive_inversion.v
+ssrtest/done_n.v
 ssrtest/elim2.v
 ssrtest/elim_pattern.v
 ssrtest/elim.v
+ssrtest/explain_match.v
+ssrtest/fast_intro.v
 ssrtest/first_n.v
 ssrtest/gen_have.v
 ssrtest/gen_pattern.v
@@ -150,6 +157,7 @@ ssrtest/have_view_idiom.v
 ssrtest/if_isnt.v
 ssrtest/indetLHS.v
 ssrtest/intro_beta.v
+ssrtest/intro_block.v
 ssrtest/intro_noop.v
 ssrtest/ipatalternation.v
 ssrtest/ltac_have.v
@@ -173,6 +181,7 @@ ssrtest/view_case.v
 ssrtest/wlogletin.v
 ssrtest/wlog_suff.v
 ssrtest/wlong_intro.v
+
 ssreflect.ml4
 
 -I .
