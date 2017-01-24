@@ -8,11 +8,10 @@
 *.o
 Make*.coq
 Make*.coq.bak
-mathcomp/ssreflect/ssreflect.ml4
-mathcomp/ssreflect/ssrmatching.ml4
-mathcomp/ssreflect/ssrmatching.mli
 mathcomp/ssreflect/ssreflect_plugin.mllib
 mathcomp/ssreflect/ssreflect_plugin.mlpack
+mathcomp/ssreflect/ssr*.ml4
+mathcomp/ssreflect/ssr*.mli
 mathcomp/ssreflect.ml4
 mathcomp/ssrmatching.ml4
 mathcomp/ssrmatching.mli

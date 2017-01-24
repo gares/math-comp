@@ -74,9 +74,15 @@ open Tok
 
 open Ssrmatching_plugin
 open Ssrmatching
+open Ssrcommon
 
 module RelDecl = Context.Rel.Declaration
 module NamedDecl = Context.Named.Declaration
+(* Forward references to tactics used everywhere in the language *)
+let simplest_newcase ?ind x gl = Hook.get simplest_newcase_tac ?ind x gl
+let ipat_rewrite occ dir gl = Hook.get ipat_rewrite_tac occ dir gl
+let move_top_with_view ~next c r v ist gl =
+  Hook.get move_top_with_view_tac ~next c r v ist gl
 
 (* Tentative patch from util.ml *)
 
@@ -97,16 +103,6 @@ let array_list_of_tl v =
 (* end patch *)
 
 module Intset = Evar.Set
-
-type loc = Loc.t
-let dummy_loc = Loc.ghost
-let errorstrm msg = CErrors.user_err ~hdr:"ssreflect" msg
-let loc_error loc msg = CErrors.user_err ~loc ~hdr:msg (str msg)
-let anomaly s = CErrors.anomaly (str s)
-
-(* Compatibility with Coq 8.6 *)
-let ppnl  = msg_info
-let msgnl = msg_info
 
 (** look up a name in the ssreflect internals module *)
 let ssrdirpath = make_dirpath [id_of_string "ssreflect"]
@@ -214,21 +210,6 @@ let pr_glob_constr_and_expr = function
   | c, None -> pr_glob_constr c
 let pr_term (k, c) = pr_guarded (guard_term k) pr_glob_constr_and_expr c
 let prl_term (k, c) = pr_guarded (guard_term k) prl_glob_constr_and_expr c
-
-(** Adding a new uninterpreted generic argument type *)
-let add_genarg tag pr =
-  let wit = Genarg.make0 tag in
-  let tag = Geninterp.Val.create tag in
-  let glob ist x = (ist, x) in
-  let subst _ x = x in
-  let interp ist x = Ftactic.return (Geninterp.Val.Dyn (tag, x)) in
-  let gen_pr _ _ _ = pr in
-  let () = Genintern.register_intern0 wit glob in
-  let () = Genintern.register_subst0 wit subst in
-  let () = Geninterp.register_interp0 wit interp in
-  let () = Geninterp.register_val0 wit (Some (Geninterp.Val.Base tag)) in
-  Pptactic.declare_extra_genarg_pprule wit gen_pr gen_pr gen_pr;
-  wit
 
 (** Constructors for cast type *)
 let dC t = CastConv t
@@ -531,12 +512,6 @@ let accept_before_syms_or_ids syms ids strm =
 
 (** Pretty-printing utilities *)
 
-let pr_id = Ppconstr.pr_id
-let pr_name = function Name id -> pr_id id | Anonymous -> str "_"
-let pr_spc () = str " "
-let pr_bar () = Pp.cut() ++ str "|"
-let pr_list = prlist_with_sep
-
 let tacltop = (5,Ppextend.E)
 
 (** Tactic-level diagnosis *)
@@ -559,8 +534,6 @@ let last_goal gls = let sigma, gll = Refiner.unpackage gls in
    Refiner.repackage sigma (List.nth gll (List.length gll - 1))
 
 let pf_type_id gl t = id_of_string (hdchar (pf_env gl) t)
-
-let not_section_id id = not (is_section_variable id)
 
 let is_pf_var c = isVar c && not_section_id (destVar c)
 
@@ -605,76 +578,6 @@ module TN = Tacticals.New
 let old_tac = Proofview.V82.tactic
 let new_tac = Proofview.V82.of_tactic
 
-module PT = Proof_type
-type 'a tac_a = (PT.goal * 'a) sigma -> (PT.goal * 'a) list sigma
-
-let push_ctx  a gl = re_sig (sig_it gl, a) (Refiner.project gl)
-let push_ctxs a gl =
-  re_sig (List.map (fun x -> x,a) (sig_it gl)) (Refiner.project gl)
-let pull_ctx gl = let g, a = sig_it gl in re_sig g (Refiner.project gl), a
-let pull_ctxs gl = let g, a = List.split (sig_it gl) in re_sig g (Refiner.project gl), a
-
-let with_ctx f gl =
-  let gl, ctx = pull_ctx gl in
-  let rc, ctx = f ctx in
-  rc, push_ctx ctx gl
-let without_ctx f gl =
-  let gl, _ctx = pull_ctx gl in
-  f gl
-let tac_ctx t gl =
-  let gl, a = pull_ctx gl in
-  let gl = t gl in
-  push_ctxs a gl
-
-let tclTHEN_ia t1 t2 gl =
-  let gal = t1 gl in
-  let goals, sigma = sig_it gal, Refiner.project gal in
-  let _, opened, sigma =
-    List.fold_left (fun (i,opened,sigma) g ->
-      let gl = t2 i (re_sig g sigma) in
-      i+1, sig_it gl :: opened, Refiner.project gl)
-      (1,[],sigma) goals in
-  re_sig (List.flatten (List.rev opened)) sigma
-
-let tclTHEN_a t1 t2 gl = tclTHEN_ia t1 (fun _ -> t2) gl
-
-let tclTHENS_a t1 tl gl = tclTHEN_ia t1
-  (fun i -> List.nth tl (i-1)) gl
-
-let rec tclTHENLIST_a = function
-  | [] -> tac_ctx tclIDTAC
-  | t1::tacl -> tclTHEN_a t1 (tclTHENLIST_a tacl)
-
-(* like  tclTHEN_i but passes to the tac "i of n" and not just i *)
-let tclTHEN_i_max tac taci gl =
-  let maxi = ref 0 in
-  tclTHEN_ia (tclTHEN_ia tac (fun i -> maxi := max i !maxi; tac_ctx tclIDTAC))
-    (fun i gl -> taci i !maxi gl) gl
-
-let tac_on_all (gl : (Proof_type.goal * 'a) list sigma) (tac : 'a tac_a) =
-  let goals = sig_it gl in
-  let opened, sigma =
-    List.fold_left (fun (opened,sigma) g ->
-      let gl = tac (re_sig g sigma) in
-      sig_it gl :: opened, Refiner.project gl)
-      ([],Refiner.project gl) goals in
-  re_sig (List.flatten (List.rev opened)) sigma
-
-(* Used to thread data between intro patterns at run time *)
-type tac_ctx = {
-  tmp_ids : (Id.t * name ref) list;
-  wild_ids : Id.t list;
-  delayed_clears : Id.t list;
-  speed : [ `Slow | `Fast ]
-}
-
-let new_ctx () =
-  { tmp_ids = []; wild_ids = []; delayed_clears = []; speed = `Slow }
-
-let with_fresh_ctx t gl =
-  let gl = push_ctx (new_ctx()) gl in
-  let gl = t gl in
-  fst (pull_ctxs gl)
 
 (** Name generation {{{ *******************************************************)
 
@@ -827,7 +730,6 @@ let new_tmp_id ctx =
   (id, orig), { ctx with tmp_ids = (id, orig) :: ctx.tmp_ids }
 ;;
 
-type ssrhyp = SsrHyp of loc * identifier
 let gentac_ref = ref (fun _ _ _ -> assert false)
 
 let rename_hd_prod orig_name_ref gl =
@@ -879,13 +781,13 @@ let betared env =
    (Closure.RedFlags.mkflags [Closure.RedFlags.fBETA])
     env
 ;;
-let rec fst_prod red tac = PG.enter begin fun gl ->
-  let concl = Evarutil.nf_evar (PG.sigma gl) (PG.concl (PG.assume gl)) in
+let rec fst_prod red tac = PG.nf_enter { PG.enter = begin fun gl ->
+  let concl = PG.concl (PG.assume gl) in
   match kind_of_term concl with
   | Prod (id,_,tgt) | LetIn(id,_,_,tgt) -> tac id
   | _ -> if red then TN.tclZEROMSG (str"No product even after head-reduction.")
          else TN.tclTHEN (old_tac hnf_in_concl) (fst_prod true tac)
-end
+end }
 ;;
 let introid ?(orig=ref Anonymous) name = tclTHEN (fun gl ->
    let g, env = pf_concl gl, pf_env gl in
@@ -1214,12 +1116,6 @@ let of_ftactic ftac gl =
   | Some ans -> ans
   in
   (sigma, ans)
-
-let interp_wit wit ist gl x = 
-  let globarg = in_gen (glbwit wit) x in
-  let arg = interp_genarg ist globarg in
-  let (sigma, arg) = of_ftactic arg gl in
-  sigma, Value.cast (topwit wit) arg
 
 let interp_intro_pattern = interp_wit wit_intro_pattern
 
@@ -1889,100 +1785,6 @@ GEXTEND Gram
 END
 (* }}} *)
 
-(** Bound assumption argument *)
-
-(* The Ltac API does have a type for assumptions but it is level-dependent *)
-(* and therefore impratical to use for complex arguments, so we substitute *)
-(* our own to have a uniform representation. Also, we refuse to intern     *)
-(* idents that match global/section constants, since this would lead to    *)
-(* fragile Ltac scripts.                                                   *)
-
-
-let hyp_id (SsrHyp (_, id)) = id
-let pr_hyp (SsrHyp (_, id)) = pr_id id
-let pr_ssrhyp _ _ _ = pr_hyp
-
-let wit_ssrhyprep = add_genarg "ssrhyprep" pr_hyp
-
-let hyp_err loc msg id =
-  CErrors.user_err ~loc ~hdr:"ssrhyp" (str msg ++ pr_id id)
-
-let intern_hyp ist (SsrHyp (loc, id) as hyp) =
-  let _ = Tacintern.intern_genarg ist (in_gen (rawwit wit_var) (loc, id)) in
-  if not_section_id id then hyp else
-  hyp_err loc "Can't clear section hypothesis " id
-
-let interp_hyp ist gl (SsrHyp (loc, id)) =
-  let s, id' = interp_wit wit_var ist gl (loc, id) in
-  if not_section_id id' then s, SsrHyp (loc, id') else
-  hyp_err loc "Can't clear section hypothesis " id'
-
-ARGUMENT EXTEND ssrhyp TYPED AS ssrhyprep PRINTED BY pr_ssrhyp
-                       INTERPRETED BY interp_hyp
-                       GLOBALIZED BY intern_hyp
-  | [ ident(id) ] -> [ SsrHyp (loc, id) ]
-END
-
-type ssrhyp_or_id = Hyp of ssrhyp | Id of ssrhyp
-
-let hoik f = function Hyp x -> f x | Id x -> f x
-let hoi_id = hoik hyp_id
-let pr_hoi = hoik pr_hyp
-let pr_ssrhoi _ _ _ = pr_hoi
-
-let wit_ssrhoirep = add_genarg "ssrhoirep" pr_hoi
-
-let intern_ssrhoi ist = function
-  | Hyp h -> Hyp (intern_hyp ist h)
-  | Id (SsrHyp (_, id)) as hyp ->
-    let _ = Tacintern.intern_genarg ist (in_gen (rawwit wit_ident) id) in
-    hyp
-
-let interp_ssrhoi ist gl = function
-  | Hyp h -> let s, h' = interp_hyp ist gl h in s, Hyp h'
-  | Id (SsrHyp (loc, id)) ->
-    let s, id' = interp_wit wit_ident ist gl id in
-    s, Id (SsrHyp (loc, id'))
-
-ARGUMENT EXTEND ssrhoi_hyp TYPED AS ssrhoirep PRINTED BY pr_ssrhoi
-                       INTERPRETED BY interp_ssrhoi
-                       GLOBALIZED BY intern_ssrhoi
-  | [ ident(id) ] -> [ Hyp (SsrHyp(loc, id)) ]
-END
-ARGUMENT EXTEND ssrhoi_id TYPED AS ssrhoirep PRINTED BY pr_ssrhoi
-                       INTERPRETED BY interp_ssrhoi
-                       GLOBALIZED BY intern_ssrhoi
-  | [ ident(id) ] -> [ Id (SsrHyp(loc, id)) ]
-END
-
-type ssrhyps = ssrhyp list
-
-let pr_hyps = pr_list pr_spc pr_hyp
-let pr_ssrhyps _ _ _ = pr_hyps
-let hyps_ids = List.map hyp_id
-
-let rec check_hyps_uniq ids = function
-  | SsrHyp (loc, id) :: _ when List.mem id ids ->
-    hyp_err loc "Duplicate assumption " id
-  | SsrHyp (_, id) :: hyps -> check_hyps_uniq (id :: ids) hyps
-  | [] -> ()
-
-let check_hyp_exists hyps (SsrHyp(_, id)) =
-  try ignore(Context.Named.lookup id hyps)
-  with Not_found -> errorstrm (str"No assumption is named " ++ pr_id id)
-
-let test_hypname_exists hyps id =
-  try ignore(Context.lookup_named id hyps); true
-  with Not_found -> false
-
-let interp_hyps ist gl ghyps =
-  let hyps = List.map snd (List.map (interp_hyp ist gl) ghyps) in
-  check_hyps_uniq [] hyps; Tacmach.project gl, hyps
-
-ARGUMENT EXTEND ssrhyps TYPED AS ssrhyp list PRINTED BY pr_ssrhyps
-                        INTERPRETED BY interp_hyps
-  | [ ssrhyp_list(hyps) ] -> [ check_hyps_uniq [] hyps; hyps ]
-END
 
 (** Terms parsing. {{{ ********************************************************)
 
@@ -2046,22 +1848,6 @@ END
 (* the default simpl and unfold tactics would erase blindly.               *)
 
 (** Clear switch *)
-
-type ssrclear = ssrhyps
-
-let pr_clear_ne clr = str "{" ++ pr_hyps clr ++ str "}"
-let pr_clear sep clr = if clr = [] then mt () else sep () ++ pr_clear_ne clr
-
-let pr_ssrclear _ _ _ = pr_clear mt
-
-ARGUMENT EXTEND ssrclear_ne TYPED AS ssrhyps PRINTED BY pr_ssrclear
-| [ "{" ne_ssrhyp_list(clr) "}" ] -> [ check_hyps_uniq [] clr; clr ]
-END
-
-ARGUMENT EXTEND ssrclear TYPED AS ssrclear_ne PRINTED BY pr_ssrclear
-| [ ssrclear_ne(clr) ] -> [ clr ]
-| [ ] -> [ [] ]
-END
 
 let cleartac clr = check_hyps_uniq [] clr; Proofview.V82.of_tactic (clear (hyps_ids clr))
 
@@ -2293,60 +2079,6 @@ let tclCLAUSES ist tac (gens, clseq) gl =
   tclTHENLIST (hidetacs clseq gl_id cl0 @ [dtac; clear; tac; endtac]) gl
 (* }}} *)
 
-(** Simpl switch *)
-
-type ssrsimpl = Simpl | Cut of int | SimplCut of int | Nop
-
-let pr_simpl = function
-  | Simpl -> str "/="
-  | Cut -1 -> str "//"
-  | Cut n -> str "/" ++ int n ++ str"/"
-  | SimplCut -1 -> str "//="
-  | SimplCut n -> str "/" ++ int n ++ str"/="
-  | Nop -> mt ()
-
-let pr_ssrsimpl _ _ _ = pr_simpl
-
-let wit_ssrsimplrep = add_genarg "ssrsimplrep" pr_simpl
-
-let test_ssrslashnum strm =
-  match Compat.get_tok (stream_nth 0 strm) with
-  | Tok.KEYWORD "/" ->
-      (match Compat.get_tok (stream_nth 1 strm) with
-      | Tok.INT _ ->
-         (match Compat.get_tok (stream_nth 2 strm) with
-         | Tok.KEYWORD "/" -> ()
-         | _ -> raise Stream.Failure)
-      | _ -> raise Stream.Failure)
-  | _ -> raise Stream.Failure
-
-let negate_parser f x =
-  let rc = try Some (f x) with Stream.Failure -> None in
-  match rc with
-  | None -> ()
-  | Some _ -> raise Stream.Failure 
-let test_not_ssrslashnum =
-  Gram.Entry.of_parser "test_not_ssrslashnum" (negate_parser test_ssrslashnum)
-let test_ssrslashnum = Gram.Entry.of_parser "test_ssrslashnum" test_ssrslashnum
-
-ARGUMENT EXTEND ssrsimpl_ne TYPED AS ssrsimplrep PRINTED BY pr_ssrsimpl
-| [ "/=" ] -> [ Simpl ]
-| [ "//" ] -> [ Cut ~-1 ]
-| [ "//=" ] -> [ SimplCut ~-1 ]
-END
-
-GEXTEND Gram
-  GLOBAL: ssrsimpl_ne;
-  ssrsimpl_ne: [
-    [ test_ssrslashnum; "/"; n = Prim.natural; "/" -> Cut n 
-    | test_ssrslashnum; "/"; n = Prim.natural; "/=" -> SimplCut n ]];
-END
-
-ARGUMENT EXTEND ssrsimpl TYPED AS ssrsimplrep PRINTED BY pr_ssrsimpl
-| [ ssrsimpl_ne(sim) ] -> [ sim ]
-| [ ] -> [ Nop ]
-END
-
 (* We must avoid zeta-converting any "let"s created by the "in" tactical. *)
 
 let tacred_simpl gl =
@@ -2366,21 +2098,6 @@ let simpltac = function
   | Cut n -> tclTRY (donetac n)
   | SimplCut n -> tclTHEN safe_simpltac (tclTRY (donetac n))
   | Nop -> tclIDTAC
-
-(** Rewriting direction *)
-
-let pr_dir = function L2R -> str "->" | R2L -> str "<-"
-let pr_rwdir = function L2R -> mt() | R2L -> str "-"
-
-let rewritetac dir c =
-  (* Due to the new optional arg ?tac, application shouldn't be too partial *)
-  Proofview.V82.of_tactic begin
-    Equality.general_rewrite (dir = L2R) AllOccurrences true false c
-  end
-
-let wit_ssrdir = add_genarg "ssrdir" pr_dir
-
-let dir_org = function L2R -> 1 | R2L -> 2
 
 (** Indexes *)
 
@@ -2623,7 +2340,7 @@ ARGUMENT EXTEND ssrview TYPED AS ssrterm list
 | [ "YouShouldNotTypeThis" ] -> [ [] ]
 END
 
-
+Pcoq.(
 GEXTEND Gram
   GLOBAL: ssrview;
   ssrview: [
@@ -2631,31 +2348,12 @@ GEXTEND Gram
     |  test_not_ssrslashnum; "/"; c = constr; w = ssrview ->
                     (mk_term ' ' c) :: w ]];
 END
+)
 
 (* }}} *)
  
 (** Extended intro patterns {{{ ***********************************************)
 
-type ssrtermrep = char * glob_constr_and_expr
-type seed = [ `Id of Id.t * [`Pre | `Post] | `Anon | `Wild ]
-type ssripat =
-  | IpatSimpl of ssrclear * ssrsimpl
-  | IpatId of identifier
-  | IpatWild
-  | IpatCase of [ `Regular of ssripatss
-                | `Block of ssripatss * seed * ssripatss ]
-  | IpatInj of ssripatss
-  | IpatRw of ssrocc * ssrdir
-  | IpatAll
-  | IpatAnon
-  | IpatView of ssrtermrep list
-  | IpatNoop
-  | IpatNewHidden of identifier list
-  | IpatFastMode
-  | IpatTmpId
-  | IpatSeed of seed
-and ssripats = ssripat list
-and ssripatss = ssripats list
 
 let remove_loc = snd
 
@@ -2664,11 +2362,11 @@ let rec ipat_of_intro_pattern = function
   | IntroAction IntroWildcard -> IpatWild
   | IntroAction (IntroOrAndPattern (IntroOrPattern iorpat)) ->
     IpatCase 
-      (`Regular List.map (List.map ipat_of_intro_pattern) 
-	 (List.map (List.map remove_loc) iorpat))
+      (`Regular (List.map (List.map ipat_of_intro_pattern) 
+	 (List.map (List.map remove_loc) iorpat)))
   | IntroAction (IntroOrAndPattern (IntroAndPattern iandpat)) ->
     IpatCase 
-      (`Regular,[List.map ipat_of_intro_pattern (List.map remove_loc iandpat)])
+      (`Regular [List.map ipat_of_intro_pattern (List.map remove_loc iandpat)])
   | IntroNaming IntroAnonymous -> IpatAnon
   | IntroAction (IntroRewrite b) -> IpatRw (allocc, if b then L2R else R2L)
   | IntroNaming (IntroFresh id) -> IpatAnon
@@ -3005,8 +2703,6 @@ END
 let view_error s gv =
   errorstrm (str ("Cannot " ^ s ^ " view ") ++ pr_term gv)
 
-(* let tclINTROS = ref (fun _ _ _ -> assert false) *)
-
 let interp_view ist si env sigma gv v rid =
   match v with
   | GApp (loc, GHole _, rargs) ->
@@ -3149,10 +2845,6 @@ let perform_injection c gl =
   let id_with_ebind = (mkVar id, NoBindings) in
   let injtac = tclTHEN (introid id) (injectidl2rtac id id_with_ebind) in 
   tclTHENLAST (Proofview.V82.of_tactic (apply (compose_lam dc cl1))) injtac gl  
-
-let simplest_newcase_ref = ref (fun ?ind t gl -> assert false)
-let simplest_newcase ?ind x gl = !simplest_newcase_ref ?ind x gl
-
 let ssrscasetac ?ind force_inj c gl = 
   if force_inj || is_injection_case c gl then perform_injection c gl
   else simplest_newcase ?ind c gl 
@@ -3166,15 +2858,15 @@ let rec intro_anon gl =
   with err0 -> try tclTHEN (Proofview.V82.of_tactic red_in_concl) intro_anon gl with _ -> raise err0
   (* with _ -> CErrors.error "No product even after reduction" *)
 
-let rec fst_unused_prod red tac = PG.enter begin fun gl ->
-  let concl = Evarutil.nf_evar (PG.sigma gl) (PG.concl (PG.assume gl)) in
+let rec fst_unused_prod red tac = PG.nf_enter { PG.enter = begin fun gl ->
+  let concl = PG.concl (PG.assume gl) in
   match kind_of_term concl with
   | Prod (id,_,tgt) | LetIn(id,_,_,tgt) ->
       if noccurn 1 tgt then tac id
       else TN.tclTHEN (old_tac intro_anon) (fst_unused_prod false tac)
   | _ -> if red then TN.tclZEROMSG (str"No product even after head-reduction.")
          else TN.tclTHEN (old_tac hnf_in_concl) (fst_unused_prod true tac)
-end;;
+end };;
 
 let introid_fast orig name = 
   fst_unused_prod false (fun id -> orig := id; old_tac (introid name))
@@ -3226,9 +2918,6 @@ let tclTHENS_nonstrict tac tacl taclname gl =
   errorstrm (pr_nb n_tac n_gls taclname ++ spc ()
              ++ str "for " ++ pr_nb n_gls n_tac "subgoal")
 
-(* Forward reference to extended rewrite *)
-let ipat_rewritetac = ref (fun _ -> rewritetac)
-
 let rec is_name_in_ipats name = function
   | IpatSimpl(clr,_) :: tl -> 
       List.exists (function SsrHyp(_,id) -> id = name) clr 
@@ -3238,8 +2927,6 @@ let rec is_name_in_ipats name = function
   | IpatCase(`Block _) :: _ -> true
   | _ :: tl -> is_name_in_ipats name tl
   | [] -> false
-
-let move_top_with_view = ref (fun ~next -> assert false)
 
 let rec nat_of_n n =
   if n = 0 then mkConstruct path_of_O
@@ -3340,7 +3027,7 @@ let (introstac : ?ist:Tacinterp.interp_sign -> ssripats -> Proof_type.tactic),
     | IpatInj iorpat ->
         tclIORPAT ?ist (with_top (ssrscasetac true)) iorpat gl
     | IpatRw (occ, dir) ->
-        with_top (!ipat_rewritetac occ dir) gl
+        with_top (ipat_rewrite occ dir) gl
     | IpatId id -> introid_a id gl
     | IpatNewHidden idl -> tac_ctx (ssrmkabstac idl) gl
     | IpatSimpl (clr, sim) ->
@@ -3363,7 +3050,7 @@ let (introstac : ?ist:Tacinterp.interp_sign -> ssripats -> Proof_type.tactic),
         let top_id = ref top_id in
         tclTHENLIST_a [
           speed_to_next_NDP;
-          (!move_top_with_view ~next next_keeps top_id (next_keeps,v) ist);
+          (move_top_with_view ~next next_keeps top_id (next_keeps,v) ist);
           (fun gl ->
              let hyps = without_ctx pf_hyps gl in
              if not next_keeps && test_hypname_exists hyps !top_id then
@@ -3484,9 +3171,7 @@ let rec eqmoveipats eqpat = function
    | ipat :: ipats -> ipat :: eqpat :: ipats
 
 (* General case *)
-let tclINTROS = ref (fun _ _ _ -> assert false)
-let () = tclINTROS := (fun ist t ip -> tclEQINTROS ~ist (t ist) tclIDTAC ip)
-let tclINTROS = !tclINTROS
+let tclINTROS ist t ip = tclEQINTROS ~ist (t ist) tclIDTAC ip
 
 (** The "=>" tactical *)
 
@@ -4233,9 +3918,8 @@ let viewmovetac_aux ?(next=ref []) clear name_ref (_, vl as v) _ gen ist gl =
         (fun cl c -> tac_ctx (genclrtac cl [c] clr)) clr gl in
       gl
 
-let () = move_top_with_view := 
-   (fun ~next c r v ->
-      with_defective_a (viewmovetac_aux ~next c r v) [] [])
+let () = Hook.set Ssrcommon.move_top_with_view
+  (fun ~next c r v -> with_defective_a (viewmovetac_aux ~next c r v) [] [])
 
 let viewmovetac ?next v deps gen ist gl = 
  with_fresh_ctx
@@ -4750,7 +4434,7 @@ let ssrelim ?(ind=ref None) ?(is_case=false) ?ist deps what ?elim eqid ipats gl 
 
 let simplest_newelim x= ssrelim ~is_case:false [] (`EConstr ([],None,x)) None []
 let simplest_newcase ?ind x= ssrelim ?ind ~is_case:true [] (`EConstr ([],None,x)) None []
-let _ = simplest_newcase_ref := simplest_newcase
+let () = Hook.set Ssrcommon.simplest_newcase simplest_newcase
 
 let check_casearg = function
 | view, (_, (([_; gen :: _], _), _)) when view <> [] && has_occ gen ->
@@ -5665,8 +5349,8 @@ TACTIC EXTEND ssrinstofruleR2L
 END
 
 (* Resolve forward reference *)
-let _ = 
-  ipat_rewritetac := fun occ dir c gl -> rwrxtac occ None dir (project gl, c) gl
+let () = Hook.set Ssrcommon.ipat_rewrite 
+  (fun occ dir c gl -> rwrxtac occ None dir (project gl, c) gl)
 
 let rwargtac ist ((dir, mult), (((oclr, occ), grx), (kind, gt))) gl =
   let fail = ref false in
