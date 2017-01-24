@@ -19,6 +19,8 @@ prime.v
 tuple.v
 
 ssreflect.ml4
+ssrvernac.ml4
+ssrvernac.mli
 
 -I .
 -R . mathcomp.ssreflect

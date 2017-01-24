@@ -16,6 +16,8 @@ define coqmakefile
 		$$LN $(1)/plugin/$(V)/ssreflect_plugin.mlpack .;\
 		$$LN $(1)/plugin/$(V)/ssrcommon.mli .;\
 		$$LN $(1)/plugin/$(V)/ssrcommon.ml4 .;\
+		$$LN $(1)/plugin/$(V)/ssrvernac.mli .;\
+		$$LN $(1)/plugin/$(V)/ssrvernac.ml4 .;\
 	;;\
 	esac;\
 	$$LN $(1)/plugin/$(V)/ssreflect.ml4 .;\
