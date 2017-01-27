@@ -13,7 +13,7 @@ val pr_list :
 val pr_paren : ('a -> Pp.std_ppcmds) -> 'a -> Pp.std_ppcmds
 val dummy_loc : loc
 val errorstrm : Pp.std_ppcmds -> 'a
-val loc_error : loc -> string -> 'a
+val loc_error : loc -> Pp.std_ppcmds -> 'a
 val anomaly : string -> 'a
 
 val array_app_tl : 'a array -> 'a list -> 'a list
@@ -119,7 +119,7 @@ val check_hyps_uniq : Id.t list -> ssrhyps -> unit
 val hyps_ids : ssrhyps -> Id.t list
 
 (* Direction to be used for rewriting as in -> or rewrite flag *)
-type ssrdir = L2R | R2L
+type ssrdir = Ssrmatching_plugin.Ssrmatching.ssrdir = L2R | R2L
 val wit_ssrdir : ssrdir uniform_genarg_type
 
 val pr_dir : ssrdir -> Pp.std_ppcmds
@@ -205,7 +205,12 @@ val nodocc : ssrdocc
 (* terms are pre constr, the kind is parsing/printing flag to distinguish
  * between x, @x and (x). It affects automatic clear and let-in preservation.
  * Cpattern is a temporary flag that becomes InParens ASAP. *)
-type ssrtermkind = InParens | WithAt | NoFlag | Cpattern
+(* type ssrtermkind = InParens | WithAt | NoFlag | Cpattern *)
+ val xInParens : char
+ val xWithAt : char
+ val xNoFlag : char
+ val xCpattern : char
+type ssrtermkind = char
 
 val ssrtermkind : ssrtermkind Pcoq.Gram.entry
 

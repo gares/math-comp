@@ -5,12 +5,13 @@ open Proof_type
 open Evd
 open Tacmach
 open Refiner
+open Ssrmatching_plugin.Ssrmatching
 
 DECLARE PLUGIN "ssreflect"
 
 (* Defining grammar rules with "xx" in it automatically declares keywords too,
  * we thus save the lexer to restore it at the end of the file *)
-let frozen_lexer = Lexer.freeze () ;;
+let frozen_lexer = CLexer.freeze () ;;
 
 
 type 'a tac_a = (goal * 'a) sigma -> (goal * 'a) list sigma
@@ -92,14 +93,16 @@ open Genarg
 
 (** Adding a new uninterpreted generic argument type *)
 let add_genarg tag pr =
-  let wit = make0 None tag in
+  let wit = Genarg.make0 tag in
+  let tag = Geninterp.Val.create tag in
   let glob ist x = (ist, x) in
   let subst _ x = x in
-  let interp ist x = Ftactic.return x in
+  let interp ist x = Ftactic.return (Geninterp.Val.Dyn (tag, x)) in
   let gen_pr _ _ _ = pr in
   let () = Genintern.register_intern0 wit glob in
   let () = Genintern.register_subst0 wit subst in
   let () = Geninterp.register_interp0 wit interp in
+  let () = Geninterp.register_val0 wit (Some (Geninterp.Val.Base tag)) in
   Pptactic.declare_extra_genarg_pprule wit gen_pr gen_pr gen_pr;
   wit
 
@@ -121,7 +124,7 @@ let interp_wit wit ist gl x =
   sigma, Tacinterp.Value.cast (topwit wit) arg
 
 
-open Constrarg
+open Stdarg
 open Nameops
 open Pp
 
@@ -133,9 +136,9 @@ let pr_spc () = str " "
 let pr_bar () = Pp.cut() ++ str "|"
 let pr_list = prlist_with_sep
 let dummy_loc = Loc.ghost
-let errorstrm = Errors.errorlabstrm "ssreflect"
-let loc_error loc msg = Errors.user_err_loc (loc, msg, str msg)
-let anomaly s = Errors.anomaly (str s)
+let errorstrm x = CErrors.user_err ~hdr:"ssreflect" x
+let loc_error loc msg = CErrors.user_err ~loc ~hdr:"ssreflect" msg
+let anomaly s = CErrors.anomaly (str s)
 
 (* Tentative patch from util.ml *)
 
@@ -195,7 +198,7 @@ let pr_ssrhyp _ _ _ = pr_hyp
 let wit_ssrhyprep = add_genarg "ssrhyprep" pr_hyp
 
 let hyp_err loc msg id =
-  Errors.user_err_loc (loc, "ssrhyp", str msg ++ pr_id id)
+  CErrors.user_err ~loc  ~hdr:"ssrhyp" (str msg ++ pr_id id)
 
 let not_section_id id = not (Termops.is_section_variable id)
 
@@ -208,6 +211,8 @@ let interp_hyp ist gl (SsrHyp (loc, id)) =
   let s, id' = interp_wit wit_var ist gl (loc, id) in
   if not_section_id id' then s, SsrHyp (loc, id') else
   hyp_err loc "Can't clear section hypothesis " id'
+
+open Pcoq.Prim
 
 ARGUMENT EXTEND ssrhyp TYPED AS ssrhyprep PRINTED BY pr_ssrhyp
                        INTERPRETED BY interp_hyp
@@ -278,7 +283,7 @@ END
 
 (** Rewriting direction *)
 
-type ssrdir = L2R | R2L
+type ssrdir = Ssrmatching_plugin.Ssrmatching.ssrdir = L2R | R2L
 
 let pr_dir = function L2R -> str "->" | R2L -> str "<-"
 let pr_rwdir = function L2R -> mt() | R2L -> str "-"
@@ -431,7 +436,7 @@ let pr_ssrindex _ _ _ = pr_index
 let noindex = Misctypes.ArgArg 0
 
 let check_index loc i =
-  if i > 0 then i else loc_error loc "Index not positive"
+  if i > 0 then i else loc_error loc (str"Index not positive")
 let mk_index loc = function
   | Misctypes.ArgArg i -> Misctypes.ArgArg (check_index loc i)
   | iv -> iv
@@ -456,8 +461,10 @@ let interp_index ist gl idx =
           end
         | None -> raise Not_found
         end end
-    with _ -> loc_error loc "Index not a number" in
+    with _ -> loc_error loc (str"Index not a number") in
     Misctypes.ArgArg (check_index loc i)
+
+open Pltac
 
 ARGUMENT EXTEND ssrindex TYPED AS ssrindex PRINTED BY pr_ssrindex
   INTERPRETED BY interp_index
@@ -502,7 +509,7 @@ type ssrmmod = May | Must | Once
 let pr_mmod = function May -> str "?" | Must -> str "!" | Once -> mt ()
 
 let wit_ssrmmod = add_genarg "ssrmmod" pr_mmod
-let ssrmmod = Pcoq.create_generic_entry "ssrmmod" (Genarg.rawwit wit_ssrmmod);;
+let ssrmmod = Pcoq.create_generic_entry Pcoq.utactic "ssrmmod" (Genarg.rawwit wit_ssrmmod);;
 
 Pcoq.(Prim.(
 GEXTEND Gram
@@ -555,12 +562,17 @@ END
 
 (* kinds of terms *)
 
-type ssrtermkind = InParens | WithAt | NoFlag | Cpattern
+(* type ssrtermkind = InParens | WithAt | NoFlag | Cpattern *)
+type ssrtermkind = char
+let xInParens = '('
+let xWithAt = '@'
+let xNoFlag = ' '
+let xCpattern = 'x'
 
 let input_ssrtermkind strm = match Compat.get_tok (Util.stream_nth 0 strm) with
-  | Tok.KEYWORD "(" -> InParens
-  | Tok.KEYWORD "@" -> WithAt
-  | _ -> NoFlag
+  | Tok.KEYWORD "(" -> xInParens
+  | Tok.KEYWORD "@" -> xWithAt
+  | _ -> xNoFlag
 
 let ssrtermkind = Pcoq.Gram.Entry.of_parser "ssrtermkind" input_ssrtermkind
 
@@ -580,13 +592,13 @@ let glob_constr ist genv = function
 let interp_constr = interp_wit wit_constr
 
 let interp_open_constr ist gl gc =
-  let (sigma, (c, _)) = Tacinterp.interp_open_constr_with_bindings ist (pf_env gl) (project gl) (gc, NoBindings) in
+  let (sigma, (c, _)) = Tacinterp.interp_open_constr_with_bindings ist (pf_env gl) (project gl) (gc, Misctypes.NoBindings) in
   (project gl, (sigma, c))
 
 let mkRHole = Glob_term.GHole (dummy_loc, Evar_kinds.InternalHole, Misctypes.IntroAnonymous, None)
 
 let mk_term k c = k, (mkRHole, Some c)
-let mk_lterm c = mk_term NoFlag c
+let mk_lterm c = mk_term xNoFlag c
 
 
 
@@ -600,7 +612,7 @@ let skip_wschars s =
 let guard_term ch1 s i = match s.[i] with
   | '(' -> false
   | '{' | '/' | '=' -> true
-  | _ -> ch1 = InParens
+  | _ -> ch1 = xInParens
 (* We also guard characters that might interfere with the ssreflect   *)
 (* tactic syntax.                                                     *)
 let pr_guarded guard prc c =
@@ -641,12 +653,14 @@ let glob_ssrterm gs = function
 let subst_ssrterm s (k, c) = k, Tacsubst.subst_glob_constr_and_expr s c
 let interp_ssrterm _ gl t = Tacmach.project gl, t
 
+open Pcoq.Constr
+
 ARGUMENT EXTEND ssrterm
      PRINTED BY pr_ssrterm
      INTERPRETED BY interp_ssrterm
      GLOBALIZED BY glob_ssrterm SUBSTITUTED BY subst_ssrterm
-     RAW_TYPED AS cpattern RAW_PRINTED BY pr_ssrterm
-     GLOB_TYPED AS cpattern GLOB_PRINTED BY pr_ssrterm
+     RAW_PRINTED BY pr_ssrterm
+     GLOB_PRINTED BY pr_ssrterm
 | [ "YouShouldNotTypeThis" constr(c) ] -> [ mk_lterm c ]
 END
 
@@ -675,9 +689,9 @@ Pcoq.(
 GEXTEND Gram
   GLOBAL: ssrview;
   ssrview: [
-    [  test_not_ssrslashnum; "/"; c = Pcoq.Constr.constr -> [mk_term NoFlag c]
+    [  test_not_ssrslashnum; "/"; c = Pcoq.Constr.constr -> [mk_term xNoFlag c]
     |  test_not_ssrslashnum; "/"; c = Pcoq.Constr.constr; w = ssrview ->
-                    (mk_term NoFlag c) :: w ]];
+                    (mk_term xNoFlag c) :: w ]];
 END
 )
 
@@ -721,7 +735,7 @@ let ipat_of_intro_pattern p = Misctypes.(
     | IntroNaming IntroAnonymous -> IpatAnon
     | IntroAction (IntroRewrite b) -> IpatRw (allocc, if b then L2R else R2L)
     | IntroNaming (IntroFresh id) -> IpatAnon
-    | IntroAction (IntroApplyOn _) -> (* to do *) Errors.error "TO DO"
+    | IntroAction (IntroApplyOn _) -> (* to do *) CErrors.error "TO DO"
     | IntroAction (IntroInjection ips) ->
         IpatInj [List.map ipat_of_intro_pattern (List.map remove_loc ips)]
     | IntroForthcoming _ ->
@@ -879,7 +893,7 @@ ARGUMENT EXTEND ssripat TYPED AS ssripatrep list PRINTED BY pr_ssripats
       | Some clr, _ -> [IpatSimpl (clr, Nop); IpatRw (allocc, R2L)]]
   | [ ssrdocc(occ) ] -> [ match occ with
       | Some cl, _ -> check_hyps_uniq [] cl; [IpatSimpl (cl, Nop)]
-      | _ -> loc_error loc "Only identifiers are allowed here"]
+      | _ -> loc_error loc (str"Only identifiers are allowed here")]
   | [ "->" ] -> [ [IpatRw (allocc, L2R)] ]
   | [ "<-" ] -> [ [IpatRw (allocc, R2L)] ]
   | [ "-" ] -> [ [IpatNoop] ]
@@ -942,8 +956,8 @@ let rec check_no_inner_seed loc seen = function
   | x :: xs ->
      let in_x = List.exists (function IpatSeed _ -> true | _ -> false) x in
      if seen && in_x then
-        Errors.user_err_loc (loc, "ssreflect",
-            strbrk "Only one block ipat per elimination is allowed")
+        CErrors.user_err ~loc ~hdr:"ssreflect"
+            (strbrk "Only one block ipat per elimination is allowed")
      else if List.length x < 2 ||
         List.for_all (function
           | IpatSeed _ -> false
@@ -954,8 +968,8 @@ let rec check_no_inner_seed loc seen = function
               check_no_inner_seed loc false after; true
           | _ -> true) x
      then check_no_inner_seed loc (seen || in_x) xs
-     else Errors.user_err_loc (loc, "ssreflect",
-            strbrk "Mixing block and regular ipat is forbidden")
+     else CErrors.user_err ~loc ~hdr:"ssreflect"
+            (strbrk "Mixing block and regular ipat is forbidden")
 ;;
 
 Pcoq.(
@@ -987,7 +1001,7 @@ END
 type ssrhpats = ((ssrclear * ssripats) * ssripats) * ssripats
 
 let check_ssrhpats loc w_binders ipats =
-  let err_loc s = Errors.user_err_loc (loc, "ssreflect", s) in
+  let err_loc s = CErrors.user_err ~loc ~hdr:"ssreflect" s in
   let clr, ipats =
     let rec aux clr = function
       | IpatSimpl (cl, Nop) :: tl -> aux (clr @ cl) tl
@@ -1018,7 +1032,7 @@ let check_ssrhpats loc w_binders ipats =
   ((clr, ipat), binders), simpl
 
 let single loc =
-  function [x] -> x | _ -> loc_error loc "Only one intro pattern is allowed"
+  function [x] -> x | _ -> loc_error loc (str"Only one intro pattern is allowed")
 
 let pr_hpats (((clr, ipat), binders), simpl) =
    pr_clear mt clr ++ pr_ipats ipat ++ pr_ipats binders ++ pr_ipats simpl
@@ -1097,6 +1111,6 @@ let move_top_with_view_tac, move_top_with_view = Hook.make ()
 (* The user is supposed to Require Import ssreflect or Require ssreflect   *)
 (* and Import ssreflect.SsrSyntax to obtain these keywords and as a         *)
 (* consequence the extended ssreflect grammar.                             *)
-let () = Lexer.unfreeze frozen_lexer ;;
+let () = CLexer.unfreeze frozen_lexer ;;
 
 (* vim: set filetype=ocaml foldmethod=marker: *)

@@ -18,6 +18,8 @@ define coqmakefile
 		$$LN $(1)/plugin/$(V)/ssrcommon.ml4 .;\
 		$$LN $(1)/plugin/$(V)/ssrvernac.mli .;\
 		$$LN $(1)/plugin/$(V)/ssrvernac.ml4 .;\
+		EXTRA="ssrcommon.mli ssrcommon.ml4 ssrvernac.mli ssrvernac.ml4";\
+		MLLIB=ssreflect_plugin.mlpack;\
 	;;\
 	esac;\
 	$$LN $(1)/plugin/$(V)/ssreflect.ml4 .;\

@@ -6,12 +6,14 @@ open Termops
 open Constrexpr
 open Constrexpr_ops
 open Pcoq
+open Pcoq.Prim
 open Pcoq.Constr
 open Pcoq.Vernac_
 open Notation_ops
 open Notation_term
 open Glob_term
 open Globnames
+open Stdarg
 open Genarg
 open Misctypes
 open Decl_kinds
@@ -29,7 +31,7 @@ let (!@) = Compat.to_coqloc
 
 (* Defining grammar rules with "xx" in it automatically declares keywords too,
  * we thus save the lexer to restore it at the end of the file *)
-let frozen_lexer = Lexer.freeze () ;;
+let frozen_lexer = CLexer.freeze () ;;
 
 (* global syntactic changes and vernacular commands *)
 
@@ -188,18 +190,18 @@ let interp_search_notation loc s opt_scope =
         let ambig = "This string refers to a complex or ambiguous notation." in
         str ambig ++ str "\nTry searching with one of\n" ++ ntns
       with _ -> str "This string is not part of an identifier or notation." in
-    Errors.user_err_loc (loc, "interp_search_notation", diagnosis)
+    loc_error loc diagnosis
 
 let pr_ssr_search_item _ _ _ = pr_search_item
 
 (* Workaround the notation API that can only print notations *)
 
-let is_ident s = try Lexer.check_ident s; true with _ -> false
+let is_ident s = try CLexer.check_ident s; true with _ -> false
 
 let is_ident_part s = is_ident ("H" ^ s)
 
 let interp_search_notation loc tag okey =
-  let err msg = Errors.user_err_loc (loc, "interp_search_notation", msg) in
+  let err msg = loc_error loc msg in
   let mk_pntn s for_key =
     let n = String.length s in
     let s' = String.make (n + 2) ' ' in
@@ -263,10 +265,10 @@ let interp_search_notation loc tag okey =
   | ntn :: ntns' when ntn = ttag ->
     if ntns' <> [] then begin
       let pr_ntns' = pr_and_list pr_ntn ntns' in
-      msg_warning (hov 4 (qtag "In" ++ str "also occurs in " ++ pr_ntns'))
+      Feedback.msg_warning (hov 4 (qtag "In" ++ str "also occurs in " ++ pr_ntns'))
     end; ntn
   | [ntn] ->
-    msgnl (hov 4 (qtag "In" ++ str "is part of notation " ++ pr_ntn ntn)); ntn
+    Feedback.msg_info (hov 4 (qtag "In" ++ str "is part of notation " ++ pr_ntn ntn)); ntn
   | ntns' ->
     let e = str "occurs in" ++ spc() ++ pr_and_list pr_ntn ntns' in
     err (hov 4 (str "ambiguous: " ++ qtag "in" ++ e)) in
@@ -284,11 +286,11 @@ let interp_search_notation loc tag okey =
     let rbody = glob_constr_of_notation_constr loc body in
     let m_body = hov 0 (Constrextern.without_symbols prl_glob_constr rbody) in
     let m = m_sc ++ pr_ntn ntn_pat ++ spc () ++ str "denotes " ++ m_body in
-    msgnl (hov 0 m) in
+    Feedback.msg_info (hov 0 m) in
   if List.length !scs > 1 then
     let scs' = List.remove (=) sc !scs in
     let w = pr_ntn ntn ++ str " is also defined " ++ pr_scs scs' in
-    msg_warning (hov 4 w)
+    Feedback.msg_warning (hov 4 w)
   else if String.string_contains ntn " .. " then
     err (pr_ntn ntn ++ str " is an n-ary notation");
   let nvars = List.filter (fun (_,(_,typ)) -> typ = NtnTypeConstr) nvars in
@@ -323,7 +325,7 @@ let rec splay_search_pattern na = function
   | Pattern.PApp (fp, args) -> splay_search_pattern (na + Array.length args) fp
   | Pattern.PLetIn (_, _, bp) -> splay_search_pattern na bp
   | Pattern.PRef hr -> hr, na
-  | _ -> Errors.error "no head constant in head search pattern"
+  | _ -> CErrors.error "no head constant in head search pattern"
 
 let coerce_search_pattern_to_sort hpat =
   let env = Global.env () and sigma = Evd.empty in
@@ -334,10 +336,10 @@ let coerce_search_pattern_to_sort hpat =
   let dc, ht =
     Reductionops.splay_prod env sigma (Universes.unsafe_type_of_global hr) in
   let np = List.length dc in
-  if np < na then Errors.error "too many arguments in head search pattern" else
+  if np < na then CErrors.error "too many arguments in head search pattern" else
   let hpat' = if np = na then hpat else mkPApp hpat (np - na) [||] in
   let warn () =
-    msg_warning (str "Listing only lemmas with conclusion matching " ++ 
+    Feedback.msg_warning (str "Listing only lemmas with conclusion matching " ++ 
       pr_constr_pattern hpat') in
   if isSort ht then begin warn (); true, hpat' end else
   let filter_head, coe_path =
@@ -385,7 +387,7 @@ let interp_search_arg arg =
       try
         let intern = Constrintern.intern_constr_pattern in 
         Search.GlobSearchSubPattern (snd (intern (Global.env()) p))
-      with e -> let e = Errors.push e in iraise (Cerrors.process_vernac_interp_error e)) arg in
+      with e -> let e = CErrors.push e in iraise (ExplainErr.process_vernac_interp_error e)) arg in
   let hpat, a1 = match arg with
   | (_, Search.GlobSearchSubPattern (Pattern.PMeta _)) :: a' -> all_true, a'
   | (true, Search.GlobSearchSubPattern p) :: a' ->
@@ -420,7 +422,7 @@ let interp_modloc mr =
   let interp_mod (_, mr) =
     let (loc, qid) = qualid_of_reference mr in
     try Nametab.full_name_module qid with Not_found ->
-    Errors.user_err_loc (loc, "interp_modloc", str "No Module " ++ pr_qualid qid) in
+    loc_error loc (str "No Module " ++ pr_qualid qid) in
   let mr_out, mr_in = List.partition fst mr in
   let interp_bmod b = function
   | [] -> fun _ _ _ -> true
@@ -432,7 +434,7 @@ let interp_modloc mr =
 
 let ssrdisplaysearch gr env t =
   let pr_res = pr_global gr ++ spc () ++ str " " ++ pr_lconstr_env env Evd.empty t in
-  msg (hov 2 pr_res ++ fnl ())
+  Feedback.msg_info (hov 2 pr_res ++ fnl ())
 
 VERNAC COMMAND EXTEND SsrSearchPattern CLASSIFIED AS QUERY
 | [ "Search" ssr_search_arg(a) ssr_modlocs(mr) ] ->
@@ -532,7 +534,7 @@ let mapviewpos f n k = if n < 3 then f n else for i = 0 to k - 1 do f i done
 let print_view_hints i =
   let pp_viewname = str "Hint View" ++ pr_viewpos i ++ str " " in
   let pp_hints = pr_list spc pr_rawhintref viewtab.(i) in
-  ppnl (pp_viewname ++ hov 0 pp_hints ++ Pp.cut ())
+  Feedback.msg_info  (pp_viewname ++ hov 0 pp_hints ++ Pp.cut ())
 
 VERNAC COMMAND EXTEND PrintView CLASSIFIED AS QUERY
 | [ "Print" "Hint" "View" ssrviewpos(i) ] -> [ mapviewpos print_view_hints i 3 ]
@@ -541,7 +543,7 @@ END
 (* Populating the table *)
 
 let cache_viewhint (_, (i, lvh)) =
-  let mem_raw h = List.exists (Notation_ops.eq_glob_constr h) in
+  let mem_raw h = List.exists (Glob_ops.glob_constr_eq h) in
   let add_hint h hdb = if mem_raw h hdb then hdb else h :: hdb in
   viewtab.(i) <- List.fold_right add_hint lvh viewtab.(i)
 
@@ -604,9 +606,11 @@ END
 (* Coq v8.3 defines "by" as a keyword, some hacks are not needed any   *)
 (* longer and thus comment out. Such comments are marked with v8.3     *)
 
+open Pltac
+
 GEXTEND Gram
-  GLOBAL: Tactic.hypident;
-  Tactic.hypident: [
+  GLOBAL: hypident;
+  hypident: [
   [ "("; IDENT "type"; "of"; id = Prim.identref; ")" -> id, Locus.InHypTypeOnly
   | "("; IDENT "value"; "of"; id = Prim.identref; ")" -> id, Locus.InHypValueOnly
   ] ];
@@ -623,8 +627,8 @@ hloc: [
 END
 
 GEXTEND Gram
-  GLOBAL: Tactic.constr_eval;
-  Tactic.constr_eval: [
+  GLOBAL: constr_eval;
+  constr_eval: [
     [ IDENT "type"; "of"; c = Constr.constr -> Genredexpr.ConstrTypeOf c ]
   ];
 END
@@ -633,6 +637,6 @@ END
 (* The user is supposed to Require Import ssreflect or Require ssreflect   *)
 (* and Import ssreflect.SsrSyntax to obtain these keywords and as a         *)
 (* consequence the extended ssreflect grammar.                             *)
-let () = Lexer.unfreeze frozen_lexer ;;
+let () = CLexer.unfreeze frozen_lexer ;;
 
 (* vim: set filetype=ocaml foldmethod=marker: *)

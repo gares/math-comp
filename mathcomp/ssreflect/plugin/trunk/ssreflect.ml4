@@ -301,6 +301,9 @@ let map_fold_constr g f ctx acc cstr =
       then cstr
       else mkCoFix (ln,(lna,tl',bl'))), acc
 
+let pf_merge_uc uc gl =
+  re_sig (sig_it gl) (Evd.merge_universe_context (Refiner.project gl) uc)
+
 let pf_merge_uc_of sigma gl =
   let ucst = Evd.evar_universe_context sigma in
   pf_merge_uc ucst gl
@@ -471,7 +474,7 @@ let pf_pr_glob_constr gl = pr_glob_constr_env (pf_env gl)
 
 let pf_msg gl =
    let ppgl = pr_lconstr_env (pf_env gl) (project gl) (pf_concl gl) in
-   msgnl (str "goal is " ++ ppgl)
+   Feedback.msg_info (str "goal is " ++ ppgl)
 
 let msgtac gl = pf_msg gl; tclIDTAC gl
 
@@ -559,10 +562,10 @@ let is_internal_name s = List.exists (fun p -> p s) !internal_names
 let ssr_id_of_string loc s =
   if is_ssr_reserved s && is_ssr_loaded () then begin
     if !ssr_reserved_ids then
-      loc_error loc ("The identifier " ^ s ^ " is reserved.")
+      loc_error loc (str ("The identifier " ^ s ^ " is reserved."))
     else if is_internal_name s then
-      msg_warning (str ("Conflict between " ^ s ^ " and ssreflect internal names."))
-    else msg_warning (str (
+      Feedback.msg_warning (str ("Conflict between " ^ s ^ " and ssreflect internal names."))
+    else Feedback.msg_warning (str (
      "The name " ^ s ^ " fits the _xxx_ format used for anonymous variables.\n"
   ^ "Scripts with explicit references to anonymous variables are fragile."))
     end; id_of_string s
@@ -577,8 +580,9 @@ GEXTEND Gram
 END
 
 let mk_internal_id s =
-  let s' = sprintf "_%s_" s in
-  for i = 1 to String.length s do if s'.[i] = ' ' then s'.[i] <- '_' done;
+  let s' = Bytes.of_string (sprintf "_%s_" s) in
+  for i = 1 to Bytes.length s do if s'.[i] = ' ' then Bytes.set s' i '_' done;
+  let s' = Bytes.to_string s' in
   add_internal_name ((=) s'); id_of_string s'
 
 let same_prefix s t n =
@@ -661,12 +665,14 @@ let mk_anon_id t gl =
   let gl_ids = pf_ids_of_hyps gl in
   if not (List.mem id0 gl_ids) then id0 else
   let s, i = List.fold_left (max_suffix m) si0 gl_ids in
-  let n = String.length s - 1 in
+  let s = Bytes.of_string s in
+  let n = Bytes.length s - 1 in
+  let set = Bytes.set s in
   let rec loop i =
-    if s.[i] = '9' then (s.[i] <- '0'; loop (i - 1)) else
-    if i < m then (s.[n] <- '0'; s.[m] <- '1'; s ^ "_") else
-    (s.[i] <- Char.chr (Char.code s.[i] + 1); s) in
-  id_of_string (loop (n - 1))
+    if s.[i] = '9' then (set i '0'; loop (i - 1)) else
+    if i < m then (set n '0'; set m '1'; s ^ "_") else
+    (set i (Char.chr (Char.code s.[i] + 1)); s) in
+  id_of_string (Bytes.to_string (loop (n - 1)))
   
 (* }}} *)
 
@@ -683,7 +689,7 @@ let rename_hd_prod orig_name_ref gl =
   match kind_of_term (pf_concl gl) with
   | Prod(_,src,tgt) ->
       new_tac (convert_concl_no_check (mkProd (!orig_name_ref,src,tgt))) gl
-  | _ -> Errors.anomaly (str "gentac creates no product")
+  | _ -> CErrors.anomaly (str "gentac creates no product")
 
 let gen_tmp_ids
   ?(ist=Geninterp.({ lfun = Id.Map.empty; extra = TacStore.empty })) gl
@@ -705,15 +711,16 @@ let new_wild_id ctx =
   id, { ctx with wild_ids = id :: ctx.wild_ids }
 
 let clear_wilds wilds gl =
-  clear (List.filter (fun id -> List.mem id wilds) (pf_ids_of_hyps gl)) gl
+  Proofview.V82.of_tactic (clear (List.filter (fun id -> List.mem id wilds) (pf_ids_of_hyps gl))) gl
 
 let clear_with_wilds wilds clr0 gl =
-  let extend_clr clr (id, _, _ as nd) =
+  let extend_clr clr nd =
+    let id = NamedDecl.get_id nd in
     if List.mem id clr || not (List.mem id wilds) then clr else
     let vars = global_vars_set_of_decl (pf_env gl) nd in
     let occurs id' = Idset.mem id' vars in
     if List.exists occurs clr then id :: clr else clr in
-  clear (Context.Named.fold_inside extend_clr ~init:clr0 (pf_hyps gl)) gl
+  Proofview.V82.of_tactic (clear (Context.Named.fold_inside extend_clr ~init:clr0 (pf_hyps gl))) gl
 
 let clear_wilds_and_tmp_and_delayed_ids gl =
   let _, ctx = pull_ctx gl in
@@ -724,23 +731,23 @@ let clear_wilds_and_tmp_and_delayed_ids gl =
 
 (* we reduce head beta redexes *)
 let betared env = 
-  Closure.create_clos_infos 
-   (Closure.RedFlags.mkflags [Closure.RedFlags.fBETA])
-    env
+  CClosure.(create_clos_infos 
+   (RedFlags.mkflags [RedFlags.fBETA])
+    env)
 ;;
 let rec fst_prod red tac = PG.nf_enter { PG.enter = begin fun gl ->
   let concl = PG.concl (PG.assume gl) in
   match kind_of_term concl with
   | Prod (id,_,tgt) | LetIn(id,_,_,tgt) -> tac id
   | _ -> if red then TN.tclZEROMSG (str"No product even after head-reduction.")
-         else TN.tclTHEN (old_tac hnf_in_concl) (fst_prod true tac)
+         else TN.tclTHEN hnf_in_concl (fst_prod true tac)
 end }
 ;;
 let introid ?(orig=ref Anonymous) name = tclTHEN (fun gl ->
    let g, env = pf_concl gl, pf_env gl in
    match kind_of_term g with
    | App (hd, _) when isLambda hd -> 
-     let g = Closure.whd_val (betared env) (Closure.inject g) in
+     let g = CClosure.whd_val (betared env) (CClosure.inject g) in
      Proofview.V82.of_tactic (convert_concl_no_check g) gl
    | _ -> tclIDTAC gl)
   (Proofview.V82.of_tactic
@@ -1139,7 +1146,7 @@ END
 
 let ssr_n_tac seed n gl =
   let name = if n = -1 then seed else ("ssr" ^ seed ^ string_of_int n) in
-  let fail msg = Pp.msg_error (str msg); Errors.error msg in
+  let fail msg = Feedback.msg_error (str msg); CErrors.error msg in
   let tacname = 
     try Nametab.locate_tactic (qualid_of_ident (id_of_string name))
     with Not_found -> try Nametab.locate_tactic (ssrqid name)
@@ -1551,9 +1558,13 @@ let tclCLAUSES ist tac (gens, clseq) gl =
 let tacred_simpl gl =
   let simpl_expr =
     Genredexpr.(
-      Simpl(Redops.make_red_flag[FBeta;FIota;FZeta;FDeltaBut []],None)) in
+      Simpl(Redops.make_red_flag[FBeta;FMatch;FZeta;FDeltaBut []],None)) in
   let esimpl, _ = Redexpr.reduction_of_red_expr (pf_env gl) simpl_expr in
-  let simpl env sigma c = snd (esimpl env sigma c) in
+  let esimpl e s c =
+    let sigma = Sigma.Unsafe.of_evar_map s in
+    let Sigma(t,_,_) = esimpl.Reductionops.e_redfun e sigma c in
+    t in
+  let simpl env sigma c = (esimpl env sigma c) in
   simpl
 
 let safe_simpltac n gl =
@@ -1639,9 +1650,9 @@ let with_view ist ~next si env (gl0 : (Proof_type.goal * tac_ctx) Evd.sigma) c n
       let tactic_view = mkSsrRef "tactic_view" in
       match v with
       | GApp (loc, GRef (_,box,None), [GHole (_,_,_, Some tac)])
-       when has_type tac (glbwit Constrarg.wit_tactic) &&
+       when has_type tac (glbwit Tacarg.wit_tactic) &&
             eq_gr box tactic_view -> begin
-        let tac = out_gen (glbwit Constrarg.wit_tactic) tac in
+        let tac = out_gen (glbwit Tacarg.wit_tactic) tac in
         match tac with
         | TacLetIn (false,binds,TacArg(l0,TacCall(l,k,args))) ->
             let ap, c', gl = terminate (sigma, c') in
@@ -1650,17 +1661,17 @@ let with_view ist ~next si env (gl0 : (Proof_type.goal * tac_ctx) Evd.sigma) c n
             let tac =
               TacLetIn (false,binds, 
                 TacArg(l0,TacCall(l,k,args @ [ Reference argid ]))) in
-            let tac = tac_ctx (ssrevaltac ist tac) in
+            let tac = tac_ctx (ssrevaltac ist (Tacinterp.Value.of_closure ist tac)) in
             let tac = tclTHENLIST_a [
                 tac_ctx (apply_type ap [c']);
                 tac_ctx (introid wid);
                 (!tclEQINTROSviewtac_ref ~ist ~next tac (tac_ctx tclIDTAC));
-                (tac_ctx (clear (hyps_ids clr))) ] in
+                (tac_ctx (new_tac (clear (hyps_ids clr)))) ] in
             let tac_check _ max gl =
-              if view <> [] then Errors.error "No view can follow a tactic-view"
+              if view <> [] then CErrors.error "No view can follow a tactic-view"
               else tac_ctx tclIDTAC gl in
             ap,c',tclTHEN_i_max tac tac_check gl
-        | _ -> Errors.error "Only simple tactic call allowed as tactic-view" end
+        | _ -> CErrors.error "Only simple tactic call allowed as tactic-view" end
       | _ -> loop (interp_view ist si env sigma f v rid) view
   in loop
 
@@ -1751,7 +1762,7 @@ let rec fst_unused_prod red tac = PG.nf_enter { PG.enter = begin fun gl ->
       if noccurn 1 tgt then tac id
       else TN.tclTHEN (old_tac intro_anon) (fst_unused_prod false tac)
   | _ -> if red then TN.tclZEROMSG (str"No product even after head-reduction.")
-         else TN.tclTHEN (old_tac hnf_in_concl) (fst_unused_prod true tac)
+         else TN.tclTHEN hnf_in_concl (fst_unused_prod true tac)
 end };;
 
 let introid_fast orig name = 
@@ -1771,7 +1782,7 @@ let introid ?(speed=`Slow) ?(orig=ref Anonymous) name =
    let g, env = pf_concl gl, pf_env gl in
    match kind_of_term g with
    | App (hd, _) when isLambda hd -> 
-     let g = Closure.whd_val (betared env) (Closure.inject g) in
+     let g = CClosure.whd_val (betared env) (CClosure.inject g) in
      new_tac (convert_concl_no_check g) gl
    | _ -> tclIDTAC gl)
   (new_tac (introid_fast orig name))
@@ -1789,7 +1800,7 @@ let speed_to_next_NDP gl =
 let with_top tac gl =
   let speed = (snd (pull_ctx gl)).speed in
   tac_ctx
-    (tclTHENLIST [ introid ~speed top_id; tac (mkVar top_id); clear [top_id]])
+    (tclTHENLIST [ introid ~speed top_id; tac (mkVar top_id); new_tac (clear [top_id])])
     gl
 
 let tclTHENS_nonstrict tac tacl taclname gl =
@@ -1894,7 +1905,7 @@ let (introstac : ?ist:Tacinterp.interp_sign -> ssripats -> Proof_type.tactic),
   let rec ipattac ?ist ~next p : tac_ctx tac_a = fun gl ->
     pp(lazy(str"ipattac: " ++ pr_ipat p));
     match p with
-    | IpatSeed _ -> Errors.anomaly(str"IpatSeed is to be used for parsing only")
+    | IpatSeed _ -> CErrors.anomaly(str"IpatSeed is to be used for parsing only")
     | IpatWild ->
         let id, gl = with_ctx new_wild_id gl in
         introid_a id gl
@@ -1945,7 +1956,7 @@ let (introstac : ?ist:Tacinterp.interp_sign -> ssripats -> Proof_type.tactic),
     let nparams, ktypes =
       match !ind with
       | Some x -> x
-      | None -> Errors.anomaly (str "block_intro with no ind info") in
+      | None -> CErrors.anomaly (str "block_intro with no ind info") in
     let n_before = List.length before in
     let n_after = List.length after in
     let n_ks = Array.length ktypes in
@@ -2216,9 +2227,9 @@ let swaptacarg (loc, b) = (b, []), Some (TacId [])
 
 let check_seqtacarg dir arg = match snd arg, dir with
   | ((true, []), Some (TacAtom (loc, _))), L2R ->
-    loc_error loc "expected \"last\""
+    loc_error loc (str "expected \"last\"")
   | ((false, []), Some (TacAtom (loc, _))), R2L ->
-    loc_error loc "expected \"first\""
+    loc_error loc (str "expected \"first\"")
   | _, _ -> arg
 
 let ssrorelse = Gram.entry_create "ssrorelse"
@@ -2381,7 +2392,7 @@ let pf_interp_ty ?(resolve_typeclasses=false) ist gl ty =
        CProdN (l, abs, force_type t)
      | CLetIn (l, n, v, t) -> incr n_binders; CLetIn (l, n, v, force_type t)
      | ty -> mkCCast dummy_loc ty (mkCType dummy_loc) in
-     mk_term NoFlag (force_type ty) in
+     mk_term xNoFlag (force_type ty) in
    let strip_cast (sigma, t) =
      let rec aux t = match kind_of_type t with
      | CastType (t, ty) when !n_binders = 0 && isSort ty -> t
@@ -2474,9 +2485,20 @@ let hyp_of_var v =  SsrHyp (dummy_loc, destVar v)
 
 let interp_clr = function
 | Some clr, (k, c) 
-  when (k = NoFlag  || k = WithAt) && is_pf_var c -> hyp_of_var c :: clr 
+  when (k = xNoFlag  || k = xWithAt) && is_pf_var c -> hyp_of_var c :: clr 
 | Some clr, _ -> clr
 | None, _ -> []
+
+let char_to_kind = function
+  | '(' -> xInParens
+  | '@' -> xWithAt
+  | ' ' -> xNoFlag
+  | 'x' -> xCpattern
+  | _ -> assert false
+
+(* Shoud go to ssrmatching *)
+let tag_of_cpattern x =
+  char_to_kind (tag_of_cpattern x)
 
 (* XXX the k of the redex should percolate out *)
 let pf_interp_gen_aux ist gl to_ind ((oclr, occ), t) =
@@ -2487,7 +2509,7 @@ let pf_interp_gen_aux ist gl to_ind ((oclr, occ), t) =
     with NoMatch -> redex_of_pattern env pat, cl in
   let clr = interp_clr (oclr, (tag_of_cpattern t, c)) in
   if not(occur_existential c) then
-    if tag_of_cpattern t = WithAt then 
+    if tag_of_cpattern t = xWithAt then 
       if not (isVar c) then
 	errorstrm (str "@ can be used with variables only")
       else match pf_get_hyp gl (destVar c) with
@@ -2500,7 +2522,7 @@ let pf_interp_gen_aux ist gl to_ind ((oclr, occ), t) =
     if nv = 0 then anomaly "occur_existential but no evars" else
     let gl, pty = pf_type_of gl p in
     false, pat, mkProd (constr_name c, pty, pf_concl gl), p, clr,ucst,gl
-  else loc_error (loc_of_cpattern t) "generalized term didn't match"
+  else loc_error (loc_of_cpattern t) (str "generalized term didn't match")
 
 let genclrtac cl cs clr =
   let tclmyORELSE tac1 tac2 gl =
@@ -2667,10 +2689,10 @@ GEXTEND Gram
     | "?" -> IpatAnon
     | occ = ssrdocc; "->" -> (match occ with
       | None, occ -> IpatRw (occ, L2R)
-      | _ -> loc_error !@loc "Only occurrences are allowed here")
+      | _ -> loc_error !@loc (str"Only occurrences are allowed here"))
     | occ = ssrdocc; "<-" -> (match occ with
       | None, occ ->  IpatRw (occ, R2L)
-      | _ -> loc_error !@loc "Only occurrences are allowed here")
+      | _ -> loc_error !@loc (str "Only occurrences are allowed here"))
     | "->" -> IpatRw (allocc, L2R)
     | "<-" -> IpatRw (allocc, R2L)
     ]];
@@ -2803,7 +2825,7 @@ let eqmovetac _ gen ist gl =
 
 let movehnftac gl = match kind_of_term (pf_concl gl) with
   | Prod _ | LetIn _ -> tclIDTAC gl
-  | _ -> Proofview.V82.of_tactic hnf_in_concl gl
+  | _ -> new_tac hnf_in_concl gl
 
 let ssrmovetac ist = function
   | _::_ as view, (_, (dgens, ipats)) ->
@@ -2945,11 +2967,12 @@ let pf_fresh_inductive_instance ind gl =
 
 let subgoals_tys (relctx, concl) =
   let rec aux cur_depth acc = function
-    | (_,_,ty) :: rest ->
+    | hd :: rest -> 
+        let ty = Context.Rel.Declaration.get_type hd in
         if noccurn cur_depth concl &&
            List.for_all_i (fun i -> function
-             | _,None, t -> noccurn i t
-             | _,Some b, t -> noccurn i t && noccurn i b) 1 rest
+             | Context.Rel.Declaration.LocalAssum(_, t) -> noccurn i t
+             | Context.Rel.Declaration.LocalDef (_, b, t) -> noccurn i t && noccurn i b) 1 rest
         then aux (cur_depth - 1) (ty :: acc) rest
         else aux (cur_depth - 1) acc rest
     | [] -> Array.of_list (List.rev acc)
@@ -3404,13 +3427,14 @@ END
 
 let interp_agen ist gl ((goclr, _), (k, gc)) (clr, rcs) =
 (* pp(lazy(str"sigma@interp_agen=" ++ pr_evar_map None (project gl))); *)
+  let k = char_to_kind k in
   let rc = glob_constr ist (pf_env gl) gc in
   let rcs' = rc :: rcs in
   match goclr with
   | None -> clr, rcs'
   | Some ghyps ->
     let clr' = snd (interp_hyps ist gl ghyps) @ clr in
-    if k <> NoFlag then clr', rcs' else
+    if k <> xNoFlag then clr', rcs' else
     match rc with
     | GVar (loc, id) when not_section_id id -> SsrHyp (loc, id) :: clr', rcs'
     | GRef (loc, VarRef id, _) when not_section_id id ->
@@ -3529,10 +3553,10 @@ let pr_ssrcongrarg _ _ _ ((n, f), dgens) =
 
 ARGUMENT EXTEND ssrcongrarg TYPED AS (int * ssrterm) * ssrdgens
   PRINTED BY pr_ssrcongrarg
-| [ natural(n) constr(c) ssrdgens(dgens) ] -> [ (n, mk_term NoFlag c), dgens ]
-| [ natural(n) constr(c) ] -> [ (n, mk_term NoFlag c),([[]],[]) ]
-| [ constr(c) ssrdgens(dgens) ] -> [ (0, mk_term NoFlag c), dgens ]
-| [ constr(c) ] -> [ (0, mk_term NoFlag c), ([[]],[]) ]
+| [ natural(n) constr(c) ssrdgens(dgens) ] -> [ (n, mk_term xNoFlag c), dgens ]
+| [ natural(n) constr(c) ] -> [ (n, mk_term xNoFlag c),([[]],[]) ]
+| [ constr(c) ssrdgens(dgens) ] -> [ (0, mk_term xNoFlag c), dgens ]
+| [ constr(c) ] -> [ (0, mk_term xNoFlag c), ([[]],[]) ]
 END
 
 let rec mkRnat n =
@@ -3672,7 +3696,7 @@ let pr_rule = function
 
 let pr_ssrrule _ _ _ = pr_rule
 
-let noruleterm loc = mk_term NoFlag (mkCProp loc)
+let noruleterm loc = mk_term xNoFlag (mkCProp loc)
 
 ARGUMENT EXTEND ssrrule_ne TYPED AS ssrrwkind * ssrterm PRINTED BY pr_ssrrule
   | [ "YouShouldNotTypeThis" ] -> [ anomaly "Grammar placeholder match" ]
@@ -3772,7 +3796,7 @@ END
 let simplintac occ rdx sim gl = 
   let simptac m gl =
     if m <> ~-1 then
-      Errors.error "Localized custom simpl tactic not supported";
+      CErrors.error "Localized custom simpl tactic not supported";
     let sigma0, concl0, env0 = project gl, pf_concl gl, pf_env gl in
     let simp env c _ _ = red_safe (tacred_simpl gl) env sigma0 c in
     Proofview.V82.of_tactic
@@ -3792,8 +3816,8 @@ let rec get_evalref c =  match kind_of_term c with
   | _ -> errorstrm (str "The term " ++ pr_constr_pat c ++ str " is not unfoldable")
 
 (* Strip a pattern generated by a prenex implicit to its constant. *)
-let strip_unfold_term ((sigma, t) as p) kt = match kind_of_term t with
-  | App (f, a) when kt = NoFlag && Array.for_all isEvar a && isConst f -> 
+let strip_unfold_term _ ((sigma, t) as p) kt = match kind_of_term t with
+  | App (f, a) when kt = xNoFlag && Array.for_all isEvar a && isConst f -> 
     (sigma, f), true
   | Const _ | Var _ -> p, true
   | Proj _ -> p, true
@@ -4175,13 +4199,13 @@ let ssrinstancesofrule ist dir arg gl =
       sigma, pats @ [pat] in
     let rpats = List.fold_left (rpat env0 sigma0) (r_sigma,[]) rules in
     mk_tpattern_matcher ~all_instances:true ~raise_NoMatch:true sigma0 None ~upats_origin rpats in
-  let print env p c _ = ppnl (hov 1 (str"instance:" ++ spc() ++ pr_constr p ++ spc() ++ str "matches:" ++ spc() ++ pr_constr c)); c in
-  ppnl (str"BEGIN INSTANCES");
+  let print env p c _ = Feedback.msg_info (hov 1 (str"instance:" ++ spc() ++ pr_constr p ++ spc() ++ str "matches:" ++ spc() ++ pr_constr c)); c in
+  Feedback.msg_info (str"BEGIN INSTANCES");
   try
     while true do
       ignore(find env0 concl0 1 ~k:print)
     done; raise NoMatch
-  with NoMatch -> ppnl (str"END INSTANCES"); tclIDTAC gl
+  with NoMatch -> Feedback.msg_info (str"END INSTANCES"); tclIDTAC gl
 
 TACTIC EXTEND ssrinstofruleL2R
 | [ "ssrinstancesofruleL2R" ssrterm(arg) ] -> [ Proofview.V82.tactic (ssrinstancesofrule ist L2R arg) ]
@@ -4289,7 +4313,7 @@ let unlocktac ist args gl =
   let locked, gl = pf_mkSsrConst "locked" gl in
   let key, gl = pf_mkSsrConst "master_key" gl in
   let ktacs = [
-    (fun gl -> unfoldtac None None (project gl,locked) InParens gl); 
+    (fun gl -> unfoldtac None None (project gl,locked) xInParens gl); 
     simplest_newcase key ] in
   tclTHENLIST (List.map utac args @ ktacs) gl
 
@@ -4480,10 +4504,10 @@ let wit_ssrfwdfmt = add_genarg "ssrfwdfmt" pr_fwdfmt
 
 (* type ssrfwd = ssrfwdfmt * ssrterm *)
 
-let mkFwdVal fk c = ((fk, []), mk_term NoFlag c)
+let mkFwdVal fk c = ((fk, []), mk_term xNoFlag c)
 let mkssrFwdVal fk c = ((fk, []), (c,None))
 
-let mkFwdCast fk loc t c = ((fk, [BFcast]), mk_term NoFlag (CCast (loc, c, dC t)))
+let mkFwdCast fk loc t c = ((fk, [BFcast]), mk_term xNoFlag (CCast (loc, c, dC t)))
 let mkssrFwdCast fk loc t c = ((fk, [BFcast]), (c, Some t))
 
 let mkFwdHint s t =
@@ -4867,8 +4891,8 @@ let havetac ist
     let gl, _ = pf_e_type_of gl idty in
     pf_unify_HO gl args_id.(2) abstract_key in
  tclTHENFIRST itac_mkabs (fun gl ->
-  let mkt t = mk_term NoFlag t in
-  let mkl t = (NoFlag, (t, None)) in
+  let mkt t = mk_term xNoFlag t in
+  let mkl t = (xNoFlag, (t, None)) in
   let interp gl rtc t = pf_abs_ssrterm ~resolve_typeclasses:rtc ist gl t in
   let interp_ty gl rtc t =
     let a,b,_,u = pf_interp_ty ~resolve_typeclasses:rtc ist gl t in a,b,u in
