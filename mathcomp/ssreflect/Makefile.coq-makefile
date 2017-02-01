@@ -15,10 +15,19 @@ define coqmakefile
 	*)\
 		$$LN $(1)/plugin/$(V)/ssreflect_plugin.mlpack .;\
 		$$LN $(1)/plugin/$(V)/ssrcommon.mli .;\
-		$$LN $(1)/plugin/$(V)/ssrcommon.ml4 .;\
+		$$LN $(1)/plugin/$(V)/ssrcommon.ml .;\
 		$$LN $(1)/plugin/$(V)/ssrvernac.mli .;\
 		$$LN $(1)/plugin/$(V)/ssrvernac.ml4 .;\
-		EXTRA="ssrcommon.mli ssrcommon.ml4 ssrvernac.mli ssrvernac.ml4";\
+		$$LN $(1)/plugin/$(V)/ssrast.mli .;\
+		$$LN $(1)/plugin/$(V)/ssripats.ml .;\
+		$$LN $(1)/plugin/$(V)/ssripats.mli .;\
+		$$LN $(1)/plugin/$(V)/ssrparser.ml4 .;\
+		$$LN $(1)/plugin/$(V)/ssrparser.mli .;\
+		$$LN $(1)/plugin/$(V)/ssrview.ml4 .;\
+		$$LN $(1)/plugin/$(V)/ssrview.mli .;\
+		$$LN $(1)/plugin/$(V)/ssrfwd.ml .;\
+		$$LN $(1)/plugin/$(V)/ssrfwd.mli .;\
+		EXTRA="ssrast.mli ssripats.ml ssripats.mli ssrcommon.mli ssrcommon.ml ssrvernac.mli ssrvernac.ml4 ssrparser.ml4 ssrparser.mli ssrview.ml4 ssrview.mli ssrfwd.ml ssrfwd.mli";\
 		MLLIB=ssreflect_plugin.mlpack;\
 	;;\
 	esac;\

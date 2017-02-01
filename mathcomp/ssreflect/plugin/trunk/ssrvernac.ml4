@@ -24,8 +24,8 @@ open Printer
 open Util
 open Extraargs
 open Ssrcommon
-
-DECLARE PLUGIN "ssreflect"
+open Ssrparser
+DECLARE PLUGIN "ssreflect_plugin"
 
 let (!@) = Compat.to_coqloc
 

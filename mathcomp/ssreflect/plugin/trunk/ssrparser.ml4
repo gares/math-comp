@@ -1,95 +1,82 @@
-(* (c) Copyright Microsoft Corporation and Inria. All rights reserved. *)
-
 open Names
-open Proof_type
-open Evd
+open Pp
+open Feedback
+open Pcoq
+open Pcoq.Prim
+open Pcoq.Constr
+open Genarg
+open Stdarg
+open Tacarg
+open Term
+open Vars
+open Context
+open Topconstr
+open Libnames
+open Tactics
+open Tacticals
+open Termops
+open Namegen
+open Recordops
 open Tacmach
-open Refiner
-open Ssrmatching_plugin.Ssrmatching
+open Coqlib
+open Glob_term
+open Util
+open Evd
+open Proofview.Notations
+open Sigma.Notations
+open Extend
+open Goptions
+open Tacexpr
+open Tacinterp
+open Pretyping
+open Constr
+open Pltac
+open Extraargs
+open Ppconstr
+open Printer
 
-DECLARE PLUGIN "ssreflect"
+open Globnames
+open Misctypes
+open Decl_kinds
+open Evar_kinds
+open Constrexpr
+open Constrexpr_ops
+open Notation_term
+open Notation_ops
+open Locus
+open Locusops
 
+open Compat
+open Tok
+
+DECLARE PLUGIN "ssreflect_plugin"
 (* Defining grammar rules with "xx" in it automatically declares keywords too,
  * we thus save the lexer to restore it at the end of the file *)
 let frozen_lexer = CLexer.freeze () ;;
 
 
-type 'a tac_a = (goal * 'a) sigma -> (goal * 'a) list sigma
 
-let push_ctx  a gl = re_sig (sig_it gl, a) (project gl)
-let push_ctxs a gl =
-  re_sig (List.map (fun x -> x,a) (sig_it gl)) (project gl)
-let pull_ctx gl = let g, a = sig_it gl in re_sig g (project gl), a
-let pull_ctxs gl = let g, a = List.split (sig_it gl) in re_sig g (project gl), a
+let tacltop = (5,Ppextend.E)
 
-let with_ctx f gl =
-  let gl, ctx = pull_ctx gl in
-  let rc, ctx = f ctx in
-  rc, push_ctx ctx gl
-let without_ctx f gl =
-  let gl, _ctx = pull_ctx gl in
-  f gl
-let tac_ctx t gl =
-  let gl, a = pull_ctx gl in
-  let gl = t gl in
-  push_ctxs a gl
+let pr_ssrtacarg _ _ prt = prt tacltop
+ARGUMENT EXTEND ssrtacarg TYPED AS tactic PRINTED BY pr_ssrtacarg
+| [ "YouShouldNotTypeThis" ] -> [ CErrors.anomaly (Pp.str "Grammar placeholder match") ]
+END
+GEXTEND Gram
+  GLOBAL: ssrtacarg;
+  ssrtacarg: [[ tac = tactic_expr LEVEL "5" -> tac ]];
+END
 
-let tclTHEN_ia t1 t2 gl =
-  let gal = t1 gl in
-  let goals, sigma = sig_it gal, project gal in
-  let _, opened, sigma =
-    List.fold_left (fun (i,opened,sigma) g ->
-      let gl = t2 i (re_sig g sigma) in
-      i+1, sig_it gl :: opened, project gl)
-      (1,[],sigma) goals in
-  re_sig (List.flatten (List.rev opened)) sigma
-
-let tclTHEN_a t1 t2 gl = tclTHEN_ia t1 (fun _ -> t2) gl
-
-let tclTHENS_a t1 tl gl = tclTHEN_ia t1
-  (fun i -> List.nth tl (i-1)) gl
-
-let rec tclTHENLIST_a = function
-  | [] -> tac_ctx tclIDTAC
-  | t1::tacl -> tclTHEN_a t1 (tclTHENLIST_a tacl)
-
-(* like  tclTHEN_i but passes to the tac "i of n" and not just i *)
-let tclTHEN_i_max tac taci gl =
-  let maxi = ref 0 in
-  tclTHEN_ia (tclTHEN_ia tac (fun i -> maxi := max i !maxi; tac_ctx tclIDTAC))
-    (fun i gl -> taci i !maxi gl) gl
-
-let tac_on_all gl tac =
-  let goals = sig_it gl in
-  let opened, sigma =
-    List.fold_left (fun (opened,sigma) g ->
-      let gl = tac (re_sig g sigma) in
-      sig_it gl :: opened, project gl)
-      ([],project gl) goals in
-  re_sig (List.flatten (List.rev opened)) sigma
-
-(* Used to thread data between intro patterns at run time *)
-type tac_ctx = {
-  tmp_ids : (Id.t * name ref) list;
-  wild_ids : Id.t list;
-  delayed_clears : Id.t list;
-  speed : [ `Slow | `Fast ]
-}
-
-let new_ctx () =
-  { tmp_ids = []; wild_ids = []; delayed_clears = []; speed = `Slow }
-
-let with_fresh_ctx t gl =
-  let gl = push_ctx (new_ctx()) gl in
-  let gl = t gl in
-  fst (pull_ctxs gl)
-
-
-
-type ist = Tacinterp.interp_sign
-type gist = Tacintern.glob_sign
+(* Lexically closed tactic for tacticals. *)
+let pr_ssrtclarg _ _ prt tac = prt tacltop tac
+ARGUMENT EXTEND ssrtclarg TYPED AS ssrtacarg
+    PRINTED BY pr_ssrtclarg
+| [ ssrtacarg(tac) ] -> [ tac ]
+END
 
 open Genarg
+type ist = Tacinterp.interp_sign
+type gist = Tacintern.glob_sign
 
 (** Adding a new uninterpreted generic argument type *)
 let add_genarg tag pr =
@@ -122,42 +109,6 @@ let interp_wit wit ist gl x =
   let arg = Tacinterp.interp_genarg ist globarg in
   let (sigma, arg) = of_ftactic arg gl in
   sigma, Tacinterp.Value.cast (topwit wit) arg
-
-
-open Stdarg
-open Nameops
-open Pp
-
-type loc = Loc.t
- 
-let pr_id = Ppconstr.pr_id
-let pr_name = function Name id -> pr_id id | Anonymous -> str "_"
-let pr_spc () = str " "
-let pr_bar () = Pp.cut() ++ str "|"
-let pr_list = prlist_with_sep
-let dummy_loc = Loc.ghost
-let errorstrm x = CErrors.user_err ~hdr:"ssreflect" x
-let loc_error loc msg = CErrors.user_err ~loc ~hdr:"ssreflect" msg
-let anomaly s = CErrors.anomaly (str s)
-
-(* Tentative patch from util.ml *)
-
-let array_fold_right_from n f v a =
-  let rec fold n =
-    if n >= Array.length v then a else f v.(n) (fold (succ n))
-  in
-  fold n
-
-let array_app_tl v l =
-  if Array.length v = 0 then invalid_arg "array_app_tl";
-  array_fold_right_from 1 (fun e l -> e::l) v l
-
-let array_list_of_tl v =
-  if Array.length v = 0 then invalid_arg "array_list_of_tl";
-  array_fold_right_from 1 (fun e l -> e::l) v []
-
-(* end patch *)
-
 (** Primitive parsing to avoid syntax conflicts with basic tactics. *)
 
 let accept_before_syms syms strm =
@@ -177,8 +128,17 @@ let accept_before_syms_or_ids syms ids strm =
   | Tok.IDENT id when List.mem id ids -> ()
   | _ -> raise Stream.Failure
 
+open Ssrast
+let pr_id = Ppconstr.pr_id
+let pr_name = function Name id -> pr_id id | Anonymous -> str "_"
+let pr_spc () = str " "
+let pr_bar () = Pp.cut() ++ str "|"
+let pr_list = prlist_with_sep
+let dummy_loc = Loc.ghost
+let errorstrm x = CErrors.user_err ~hdr:"ssreflect" x
+let loc_error loc msg = CErrors.user_err ~loc ~hdr:"ssreflect" msg
+let anomaly s = CErrors.anomaly (str s)
 
-let (!@) = Compat.to_coqloc
 
 (**************************** ssrhyp **************************************) 
 
@@ -190,7 +150,6 @@ let (!@) = Compat.to_coqloc
 (* idents that match global/section constants, since this would lead to    *)
 (* fragile Ltac scripts.                                                   *)
 
-type ssrhyp = SsrHyp of loc * identifier
 let hyp_id (SsrHyp (_, id)) = id
 let pr_hyp (SsrHyp (_, id)) = pr_id id
 let pr_ssrhyp _ _ _ = pr_hyp
@@ -220,7 +179,6 @@ ARGUMENT EXTEND ssrhyp TYPED AS ssrhyprep PRINTED BY pr_ssrhyp
   | [ ident(id) ] -> [ SsrHyp (loc, id) ]
 END
 
-type ssrhyp_or_id = Hyp of ssrhyp | Id of ssrhyp
 
 let hoik f = function Hyp x -> f x | Id x -> f x
 let hoi_id = hoik hyp_id
@@ -252,7 +210,6 @@ ARGUMENT EXTEND ssrhoi_id TYPED AS ssrhoirep PRINTED BY pr_ssrhoi
   | [ ident(id) ] -> [ Id (SsrHyp(loc, id)) ]
 END
 
-type ssrhyps = ssrhyp list
 
 let pr_hyps = pr_list pr_spc pr_hyp
 let pr_ssrhyps _ _ _ = pr_hyps
@@ -283,7 +240,6 @@ END
 
 (** Rewriting direction *)
 
-type ssrdir = Ssrmatching_plugin.Ssrmatching.ssrdir = L2R | R2L
 
 let pr_dir = function L2R -> str "->" | R2L -> str "<-"
 let pr_rwdir = function L2R -> mt() | R2L -> str "-"
@@ -297,7 +253,6 @@ let inv_dir = function L2R -> R2L | R2L -> L2R
 
 (** Simpl switch *)
 
-type ssrsimpl = Simpl of int | Cut of int | SimplCut of int * int | Nop
 
 let pr_simpl = function
   | Simpl -1 -> str "/="
@@ -400,9 +355,6 @@ ARGUMENT EXTEND ssrsimpl TYPED AS ssrsimplrep PRINTED BY pr_ssrsimpl
 | [ ] -> [ Nop ]
 END
 
-
-type ssrclear = ssrhyps
-
 let pr_clear_ne clr = str "{" ++ pr_hyps clr ++ str "}"
 let pr_clear sep clr = if clr = [] then mt () else sep () ++ pr_clear_ne clr
 
@@ -425,7 +377,6 @@ END
 (* positive values, and allows the use of constr numerals, so that   *)
 (* e.g., "let n := eval compute in (1 + 3) in (do n!clear)" works.   *)
 
-type ssrindex = int Misctypes.or_var
 
 let pr_index = function
   | Misctypes.ArgVar (_, id) -> pr_id id
@@ -484,7 +435,6 @@ END
 (* default, but "{-}" prevents the implicit clear, and can be used to     *)
 (* force dependent elimination -- see ndefectelimtac below.               *)
 
-type ssrocc = (bool * int list) option
 
 let pr_occ = function
   | Some (true, occ) -> str "{-" ++ pr_list pr_spc int occ ++ str "}"
@@ -492,6 +442,8 @@ let pr_occ = function
   | None -> str "{}"
 
 let pr_ssrocc _ _ _ = pr_occ
+
+open Pcoq.Prim
 
 ARGUMENT EXTEND ssrocc TYPED AS (bool * int list) option PRINTED BY pr_ssrocc
 | [ natural(n) natural_list(occ) ] -> [
@@ -504,7 +456,6 @@ let allocc = Some(false,[])
 
 (* modality *)
 
-type ssrmmod = May | Must | Once
 
 let pr_mmod = function May -> str "?" | Must -> str "!" | Once -> mt ()
 
@@ -520,7 +471,6 @@ END
 
 (** Rewrite multiplier: !n ?n *)
 
-type ssrmult = int * ssrmmod
 
 let notimes = 0
 let nomult = 1, Once
@@ -542,7 +492,6 @@ END
 
 (** Discharge occ switch (combined occurrence / clear switch *)
 
-type ssrdocc = ssrclear option * ssrocc
 
 let mkocc occ = None, occ
 let noclr = mkocc None
@@ -563,7 +512,6 @@ END
 (* kinds of terms *)
 
 (* type ssrtermkind = InParens | WithAt | NoFlag | Cpattern *)
-type ssrtermkind = char
 let xInParens = '('
 let xWithAt = '@'
 let xNoFlag = ' '
@@ -577,7 +525,6 @@ let input_ssrtermkind strm = match Compat.get_tok (Util.stream_nth 0 strm) with
 let ssrtermkind = Pcoq.Gram.Entry.of_parser "ssrtermkind" input_ssrtermkind
 
 (* terms *)
-type ssrterm = ssrtermkind * Tacexpr.glob_constr_and_expr
 
 (** Terms parsing. ********************************************************)
 
@@ -674,8 +621,6 @@ END
 
 (* Views *)
 
-type ssrview = ssrterm list
-
 let pr_view = pr_list mt (fun c -> str "/" ++ pr_term c)
 
 let pr_ssrview _ _ _ = pr_view
@@ -699,25 +644,6 @@ END
  
 (* ipats *)
 
-type seed = [ `Id of Id.t * [`Pre | `Post] | `Anon | `Wild ]
-type ssripat =
-  | IpatSimpl of ssrclear * ssrsimpl
-  | IpatId of identifier
-  | IpatWild
-  | IpatCase of [ `Regular of ssripatss
-                | `Block of ssripatss * seed * ssripatss ]
-  | IpatInj of ssripatss
-  | IpatRw of ssrocc * ssrdir
-  | IpatAll
-  | IpatAnon
-  | IpatView of ssrterm list
-  | IpatNoop
-  | IpatNewHidden of identifier list
-  | IpatFastMode
-  | IpatTmpId
-  | IpatSeed of seed
-and ssripats = ssripat list
-and ssripatss = ssripats list
 
 let remove_loc = snd
 
@@ -998,8 +924,6 @@ END
 
 (* subsets of patterns *)
 
-type ssrhpats = ((ssrclear * ssripats) * ssripats) * ssripats
-
 let check_ssrhpats loc w_binders ipats =
   let err_loc s = CErrors.user_err ~loc ~hdr:"ssreflect" s in
   let clr, ipats =
@@ -1044,8 +968,6 @@ PRINTED BY pr_ssrhpats
   | [ ssripats(i) ] -> [ check_ssrhpats loc true i ]
 END
 
-type ssrhpats_wtransp = bool * ssrhpats
-
 ARGUMENT EXTEND ssrhpats_wtransp
   TYPED AS bool * (((ssrclear * ssripats) * ssripats) * ssripats)
   PRINTED BY pr_ssrhpats_wtransp
@@ -1081,36 +1003,669 @@ ARGUMENT EXTEND ssrintros TYPED AS ssrintros_ne PRINTED BY pr_ssrintros
   | [ ] -> [ [] ]
 END
 
+let pr_ssrintrosarg _ _ prt (tac, ipats) =
+  prt tacltop tac ++ pr_intros spc ipats
 
-open Locus
-(****************************** tactics ***********************************)
+ARGUMENT EXTEND ssrintrosarg TYPED AS tactic * ssrintros
+   PRINTED BY pr_ssrintrosarg
+| [ "YouShouldNotTypeThis" ssrtacarg(arg) ssrintros_ne(ipats) ] -> [ arg, ipats ]
+END
 
-let rewritetac dir c =
-  (* Due to the new optional arg ?tac, application shouldn't be too partial *)
-  Proofview.V82.of_tactic begin
-    Equality.general_rewrite (dir = L2R) AllOccurrences true false c
-  end
+(* set_pr_ssrtac "tclintros" 0 [ArgSsr "introsarg"] *)
+let ssrtac_name name = {
+  mltac_plugin = "ssreflect_plugin";
+  mltac_tactic = "ssr" ^ name;
+}
 
-(******************************* hooks ************************************)
+let ssrtac_entry name n = {
+  mltac_name = ssrtac_name name; 
+  mltac_index = n;
+}
+let ssrtac_atom loc name args = TacML (loc, ssrtac_entry name 0, args)
+let ssrtac_expr = ssrtac_atom
 
-type name_hint = (int * Constr.types array) option ref
+let tclintros_expr loc tac ipats =
+  let args = [Tacexpr.TacGeneric (in_gen (rawwit wit_ssrintrosarg) (tac, ipats))] in
+  ssrtac_expr loc "tclintros" args
 
-type simplest_newcase = ?ind:name_hint -> Constr.t -> tactic
-let simplest_newcase_tac, simplest_newcase = Hook.make ()
+GEXTEND Gram
+  GLOBAL: tactic_expr;
+  tactic_expr: LEVEL "1" [ RIGHTA
+    [ tac = tactic_expr; intros = ssrintros_ne -> tclintros_expr !@loc tac intros
+    ] ];
+END
 
-type ipat_rewrite = ssrocc -> ssrdir -> Constr.t -> tactic
-let ipat_rewrite_tac, ipat_rewrite =
-  Hook.make ~default:(fun _ -> rewritetac) ()
+(** Defined identifier *)
+let pr_ssrfwdid id = pr_spc () ++ pr_id id
 
-type move_top_with_view =
-  next:ssripats ref -> bool -> Id.t ref -> bool * ssrterm list -> ist ->
-    tac_ctx tac_a
-let move_top_with_view_tac, move_top_with_view = Hook.make ()
+let pr_ssrfwdidx _ _ _ = pr_ssrfwdid
 
+(* We use a primitive parser for the head identifier of forward *)
+(* tactis to avoid syntactic conflicts with basic Coq tactics. *)
+ARGUMENT EXTEND ssrfwdid TYPED AS ident PRINTED BY pr_ssrfwdidx
+  | [ "YouShouldNotTypeThis" ] -> [ anomaly "Grammar placeholder match" ]
+END
+
+let accept_ssrfwdid strm =
+  match Compat.get_tok (stream_nth 0 strm) with
+  | Tok.IDENT id -> accept_before_syms_or_any_id [":"; ":="; "("] strm
+  | _ -> raise Stream.Failure
+
+
+let test_ssrfwdid = Gram.Entry.of_parser "test_ssrfwdid" accept_ssrfwdid
+
+GEXTEND Gram
+  GLOBAL: ssrfwdid;
+  ssrfwdid: [[ test_ssrfwdid; id = Prim.ident -> id ]];
+  END
+
+  
+(* by *)
+(** Tactical arguments. *)
+
+(* We have four kinds: simple tactics, [|]-bracketed lists, hints, and swaps *)
+(* The latter two are used in forward-chaining tactics (have, suffice, wlog) *)
+(* and subgoal reordering tacticals (; first & ; last), respectively.        *)
+
+
+let pr_ortacs prt = 
+  let rec pr_rec = function
+  | [None]           -> spc() ++ str "|" ++ spc()
+  | None :: tacs     -> spc() ++ str "|" ++ pr_rec tacs
+  | Some tac :: tacs -> spc() ++ str "| " ++ prt tacltop tac ++  pr_rec tacs
+  | []                -> mt() in
+  function
+  | [None]           -> spc()
+  | None :: tacs     -> pr_rec tacs
+  | Some tac :: tacs -> prt tacltop tac ++ pr_rec tacs
+  | []                -> mt()
+let pr_ssrortacs _ _ = pr_ortacs
+
+ARGUMENT EXTEND ssrortacs TYPED AS tactic option list PRINTED BY pr_ssrortacs
+| [ ssrtacarg(tac) "|" ssrortacs(tacs) ] -> [ Some tac :: tacs ]
+| [ ssrtacarg(tac) "|" ] -> [ [Some tac; None] ]
+| [ ssrtacarg(tac) ] -> [ [Some tac] ]
+| [ "|" ssrortacs(tacs) ] -> [ None :: tacs ]
+| [ "|" ] -> [ [None; None] ]
+END
+
+let pr_hintarg prt = function
+  | true, tacs -> hv 0 (str "[ " ++ pr_ortacs prt tacs ++ str " ]")
+  | false, [Some tac] -> prt tacltop tac
+  | _, _ -> mt()
+
+let pr_ssrhintarg _ _ = pr_hintarg
+
+let mk_hint tac = false, [Some tac]
+let mk_orhint tacs = true, tacs
+let nullhint = true, []
+let nohint = false, []
+
+ARGUMENT EXTEND ssrhintarg TYPED AS bool * ssrortacs PRINTED BY pr_ssrhintarg
+| [ "[" "]" ] -> [ nullhint ]
+| [ "[" ssrortacs(tacs) "]" ] -> [ mk_orhint tacs ]
+| [ ssrtacarg(arg) ] -> [ mk_hint arg ]
+END
+
+ARGUMENT EXTEND ssrortacarg TYPED AS ssrhintarg PRINTED BY pr_ssrhintarg
+| [ "[" ssrortacs(tacs) "]" ] -> [ mk_orhint tacs ]
+END
+
+
+let pr_hint prt arg =
+  if arg = nohint then mt() else str "by " ++ pr_hintarg prt arg
+let pr_ssrhint _ _ = pr_hint
+
+ARGUMENT EXTEND ssrhint TYPED AS ssrhintarg PRINTED BY pr_ssrhint
+| [ ]                       -> [ nohint ]
+END
+(** The "in" pseudo-tactical {{{ **********************************************)
+
+(* We can't make "in" into a general tactical because this would create a  *)
+(* crippling conflict with the ltac let .. in construct. Hence, we add     *)
+(* explicitly an "in" suffix to all the extended tactics for which it is   *)
+(* relevant (including move, case, elim) and to the extended do tactical   *)
+(* below, which yields a general-purpose "in" of the form do [...] in ...  *)
+
+(* This tactical needs to come before the intro tactics because the latter *)
+(* must take precautions in order not to interfere with the discharged     *)
+(* assumptions. This is especially difficult for discharged "let"s, which  *)
+(* the default simpl and unfold tactics would erase blindly.               *)
+
+open Ssrmatching_plugin.Ssrmatching
+
+let pr_wgen = function 
+  | (clr, Some((id,k),None)) -> spc() ++ pr_clear mt clr ++ str k ++ pr_hoi id
+  | (clr, Some((id,k),Some p)) ->
+      spc() ++ pr_clear mt clr ++ str"(" ++ str k ++ pr_hoi id ++ str ":=" ++
+        pr_cpattern p ++ str ")"
+  | (clr, None) -> spc () ++ pr_clear mt clr
+let pr_ssrwgen _ _ _ = pr_wgen
+
+(* no globwith for char *)
+ARGUMENT EXTEND ssrwgen
+  TYPED AS ssrclear * ((ssrhoi_hyp * string) * cpattern option) option
+  PRINTED BY pr_ssrwgen
+| [ ssrclear_ne(clr) ] -> [ clr, None ]
+| [ ssrhoi_hyp(hyp) ] -> [ [], Some((hyp, " "), None) ]
+| [ "@" ssrhoi_hyp(hyp) ] -> [ [], Some((hyp, "@"), None) ]
+| [ "(" ssrhoi_id(id) ":=" lcpattern(p) ")" ] ->
+  [ [], Some ((id," "),Some p) ]
+| [ "(" ssrhoi_id(id) ")" ] -> [ [], Some ((id,"("), None) ]
+| [ "(@" ssrhoi_id(id) ":=" lcpattern(p) ")" ] ->
+  [ [], Some ((id,"@"),Some p) ]
+| [ "(" "@" ssrhoi_id(id) ":=" lcpattern(p) ")" ] ->
+  [ [], Some ((id,"@"),Some p) ]
+END
+
+let pr_clseq = function
+  | InGoal | InHyps -> mt ()
+  | InSeqGoal       -> str "|- *"
+  | InHypsSeqGoal   -> str " |- *"
+  | InHypsGoal      -> str " *"
+  | InAll           -> str "*"
+  | InHypsSeq       -> str " |-"
+  | InAllHyps       -> str "* |-"
+
+let wit_ssrclseq = add_genarg "ssrclseq" pr_clseq
+let pr_clausehyps = pr_list pr_spc pr_wgen
+let pr_ssrclausehyps _ _ _ = pr_clausehyps
+
+ARGUMENT EXTEND ssrclausehyps 
+TYPED AS ssrwgen list PRINTED BY pr_ssrclausehyps
+| [ ssrwgen(hyp) "," ssrclausehyps(hyps) ] -> [ hyp :: hyps ]
+| [ ssrwgen(hyp) ssrclausehyps(hyps) ] -> [ hyp :: hyps ]
+| [ ssrwgen(hyp) ] -> [ [hyp] ]
+END
+
+(* type ssrclauses = ssrahyps * ssrclseq *)
+
+let pr_clauses (hyps, clseq) = 
+  if clseq = InGoal then mt ()
+  else str "in " ++ pr_clausehyps hyps ++ pr_clseq clseq
+let pr_ssrclauses _ _ _ = pr_clauses
+
+ARGUMENT EXTEND ssrclauses TYPED AS ssrwgen list * ssrclseq
+    PRINTED BY pr_ssrclauses
+  | [ "in" ssrclausehyps(hyps) "|-" "*" ] -> [ hyps, InHypsSeqGoal ]
+  | [ "in" ssrclausehyps(hyps) "|-" ]     -> [ hyps, InHypsSeq ]
+  | [ "in" ssrclausehyps(hyps) "*" ]      -> [ hyps, InHypsGoal ]
+  | [ "in" ssrclausehyps(hyps) ]          -> [ hyps, InHyps ]
+  | [ "in" "|-" "*" ]                     -> [ [], InSeqGoal ]
+  | [ "in" "*" ]                          -> [ [], InAll ]
+  | [ "in" "*" "|-" ]                     -> [ [], InAllHyps ]
+  | [ ]                                   -> [ [], InGoal ]
+END
+
+
+
+
+(** Definition value formatting *)
+
+(* We use an intermediate structure to correctly render the binder list  *)
+(* abbreviations. We use a list of hints to extract the binders and      *)
+(* base term from a term, for the two first levels of representation of  *)
+(* of constr terms.                                                      *)
+
+let pr_binder prl = function
+  | Bvar x ->
+    pr_name x
+  | Bdecl (xs, t) ->
+    str "(" ++ pr_list pr_spc pr_name xs ++ str " : " ++ prl t ++ str ")"
+  | Bdef (x, None, v) ->
+    str "(" ++ pr_name x ++ str " := " ++ prl v ++ str ")"
+  | Bdef (x, Some t, v) ->
+    str "(" ++ pr_name x ++ str " : " ++ prl t ++
+                            str " := " ++ prl v ++ str ")"
+  | Bstruct x ->
+    str "{struct " ++ pr_name x ++ str "}"
+  | Bcast t ->
+    str ": " ++ prl t
+
+let rec mkBstruct i = function
+  | Bvar x :: b ->
+    if i = 0 then [Bstruct x] else mkBstruct (i - 1) b
+  | Bdecl (xs, _) :: b ->
+    let i' = i - List.length xs in
+    if i' < 0 then [Bstruct (List.nth xs i)] else mkBstruct i' b
+  | _ :: b -> mkBstruct i b
+  | [] -> []
+
+let rec format_local_binders h0 bl0 = match h0, bl0 with
+  | BFvar :: h, LocalRawAssum ([_, x], _,  _) :: bl ->
+    Bvar x :: format_local_binders h bl
+  | BFdecl _ :: h, LocalRawAssum (lxs, _, t) :: bl ->
+    Bdecl (List.map snd lxs, t) :: format_local_binders h bl
+  | BFdef false :: h, LocalRawDef ((_, x), v) :: bl ->
+    Bdef (x, None, v) :: format_local_binders h bl
+  | BFdef true :: h,
+      LocalRawDef ((_, x), CCast (_, v, CastConv t)) :: bl ->
+    Bdef (x, Some t, v) :: format_local_binders h bl
+  | _ -> []
+  
+let rec format_constr_expr h0 c0 = match h0, c0 with
+  | BFvar :: h, CLambdaN (_, [[_, x], _, _], c) ->
+    let bs, c' = format_constr_expr h c in
+    Bvar x :: bs, c'
+  | BFdecl _:: h, CLambdaN (_, [lxs, _, t], c) ->
+    let bs, c' = format_constr_expr h c in
+    Bdecl (List.map snd lxs, t) :: bs, c'
+  | BFdef false :: h, CLetIn(_, (_, x), v, c) ->
+    let bs, c' = format_constr_expr h c in
+    Bdef (x, None, v) :: bs, c'
+  | BFdef true :: h, CLetIn(_, (_, x), CCast (_, v, CastConv t), c) ->
+    let bs, c' = format_constr_expr h c in
+    Bdef (x, Some t, v) :: bs, c'
+  | [BFcast], CCast (_, c, CastConv t) ->
+    [Bcast t], c
+  | BFrec (has_str, has_cast) :: h, 
+    CFix (_, _, [_, (Some locn, CStructRec), bl, t, c]) ->
+    let bs = format_local_binders h bl in
+    let bstr = if has_str then [Bstruct (Name (snd locn))] else [] in
+    bs @ bstr @ (if has_cast then [Bcast t] else []), c 
+  | BFrec (_, has_cast) :: h, CCoFix (_, _, [_, bl, t, c]) ->
+    format_local_binders h bl @ (if has_cast then [Bcast t] else []), c
+  | _, c ->
+    [], c
+
+let rec format_glob_decl h0 d0 = match h0, d0 with
+  | BFvar :: h, (x, _, None, _) :: d ->
+    Bvar x :: format_glob_decl h d
+  | BFdecl 1 :: h,  (x, _, None, t) :: d ->
+    Bdecl ([x], t) :: format_glob_decl h d
+  | BFdecl n :: h, (x, _, None, t) :: d when n > 1 ->
+    begin match format_glob_decl (BFdecl (n - 1) :: h) d with
+    | Bdecl (xs, _) :: bs -> Bdecl (x :: xs, t) :: bs
+    | bs -> Bdecl ([x], t) :: bs
+    end
+  | BFdef false :: h, (x, _, Some v, _)  :: d ->
+    Bdef (x, None, v) :: format_glob_decl h d
+  | BFdef true:: h, (x, _, Some (GCast (_, v, CastConv t)), _) :: d ->
+    Bdef (x, Some t, v) :: format_glob_decl h d
+  | _, (x, _, None, t) :: d ->
+    Bdecl ([x], t) :: format_glob_decl [] d
+  | _, (x, _, Some v, _) :: d ->
+     Bdef (x, None, v) :: format_glob_decl [] d
+  | _, [] -> []
+
+let rec format_glob_constr h0 c0 = match h0, c0 with
+  | BFvar :: h, GLambda (_, x, _, _, c) ->
+    let bs, c' = format_glob_constr h c in
+    Bvar x :: bs, c'
+  | BFdecl 1 :: h,  GLambda (_, x, _, t, c) ->
+    let bs, c' = format_glob_constr h c in
+    Bdecl ([x], t) :: bs, c'
+  | BFdecl n :: h,  GLambda (_, x, _, t, c) when n > 1 ->
+    begin match format_glob_constr (BFdecl (n - 1) :: h) c with
+    | Bdecl (xs, _) :: bs, c' -> Bdecl (x :: xs, t) :: bs, c'
+    | _ -> [Bdecl ([x], t)], c
+    end
+  | BFdef false :: h, GLetIn(_, x, v, c) ->
+    let bs, c' = format_glob_constr h c in
+    Bdef (x, None, v) :: bs, c'
+  | BFdef true :: h, GLetIn(_, x, GCast (_, v, CastConv t), c) ->
+    let bs, c' = format_glob_constr h c in
+    Bdef (x, Some t, v) :: bs, c'
+  | [BFcast], GCast (_, c, CastConv t) ->
+    [Bcast t], c
+  | BFrec (has_str, has_cast) :: h, GRec (_, f, _, bl, t, c)
+      when Array.length c = 1 ->
+    let bs = format_glob_decl h bl.(0) in
+    let bstr = match has_str, f with
+    | true, GFix ([|Some i, GStructRec|], _) -> mkBstruct i bs
+    | _ -> [] in
+    bs @ bstr @ (if has_cast then [Bcast t.(0)] else []), c.(0)
+  | _, c ->
+    [], c
+
+(** Forward chaining argument *)
+
+(* There are three kinds of forward definitions:           *)
+(*   - Hint: type only, cast to Type, may have proof hint. *)
+(*   - Have: type option + value, no space before type     *)
+(*   - Pose: binders + value, space before binders.        *)
+
+let pr_fwdkind = function
+  | FwdHint (s,_) -> str (s ^ " ") | _ -> str " :=" ++ spc ()
+let pr_fwdfmt (fk, _ : ssrfwdfmt) = pr_fwdkind fk
+
+let wit_ssrfwdfmt = add_genarg "ssrfwdfmt" pr_fwdfmt
+
+(* type ssrfwd = ssrfwdfmt * ssrterm *)
+
+let mkFwdVal fk c = ((fk, []), mk_term xNoFlag c)
+let mkssrFwdVal fk c = ((fk, []), (c,None))
+let dC t = CastConv t
+
+let mkFwdCast fk loc t c = ((fk, [BFcast]), mk_term xNoFlag (CCast (loc, c, dC t)))
+let mkssrFwdCast fk loc t c = ((fk, [BFcast]), (c, Some t))
+let mkCHole loc = CHole (loc, None, IntroAnonymous, None)
+
+let mkFwdHint s t =
+  let loc =  Constrexpr_ops.constr_loc t in
+  mkFwdCast (FwdHint (s,false)) loc t (mkCHole loc)
+let mkFwdHintNoTC s t =
+  let loc =  Constrexpr_ops.constr_loc t in
+  mkFwdCast (FwdHint (s,true)) loc t (mkCHole loc)
+
+let pr_gen_fwd prval prc prlc fk (bs, c) =
+  let prc s = str s ++ spc () ++ prval prc prlc c in
+  match fk, bs with
+  | FwdHint (s,_), [Bcast t] -> str s ++ spc () ++ prlc t
+  | FwdHint (s,_), _ ->  prc (s ^ "(* typeof *)")
+  | FwdHave, [Bcast t] -> str ":" ++ spc () ++ prlc t ++ prc " :="
+  | _, [] -> prc " :="
+  | _, _ -> spc () ++ pr_list spc (pr_binder prlc) bs ++ prc " :="
+
+let pr_fwd_guarded prval prval' = function
+| (fk, h), (_, (_, Some c)) ->
+  pr_gen_fwd prval pr_constr_expr prl_constr_expr fk (format_constr_expr h c)
+| (fk, h), (_, (c, None)) ->
+  pr_gen_fwd prval' pr_glob_constr prl_glob_constr fk (format_glob_constr h c)
+
+let pr_unguarded prc prlc = prlc
+
+let pr_fwd = pr_fwd_guarded pr_unguarded pr_unguarded
+let pr_ssrfwd _ _ _ = pr_fwd
+ 
+ARGUMENT EXTEND ssrfwd TYPED AS (ssrfwdfmt * ssrterm) PRINTED BY pr_ssrfwd
+  | [ ":=" lconstr(c) ] -> [ mkFwdVal FwdPose c ]
+  | [ ":" lconstr (t) ":=" lconstr(c) ] -> [ mkFwdCast FwdPose loc t c ]
+END
+
+(** Independent parsing for binders *)
+
+(* The pose, pose fix, and pose cofix tactics use these internally to  *)
+(* parse argument fragments.                                           *)
+
+let pr_ssrbvar prc _ _ v = prc v
+let mkCVar loc id = CRef (Ident (loc, id),None)
+
+ARGUMENT EXTEND ssrbvar TYPED AS constr PRINTED BY pr_ssrbvar
+| [ ident(id) ] -> [ mkCVar loc id ]
+| [ "_" ] -> [ mkCHole loc ]
+END
+
+let bvar_lname = function
+  | CRef (Ident (loc, id), _) -> loc, Name id
+  | c -> constr_loc c, Anonymous
+
+let pr_ssrbinder prc _ _ (_, c) = prc c
+
+ARGUMENT EXTEND ssrbinder TYPED AS ssrfwdfmt * constr PRINTED BY pr_ssrbinder
+ | [ ssrbvar(bv) ] ->
+   [ let xloc, _ as x = bvar_lname bv in
+     (FwdPose, [BFvar]),
+     CLambdaN (loc,[[x],Default Explicit,mkCHole xloc],mkCHole loc) ]
+ | [ "(" ssrbvar(bv) ")" ] ->
+   [ let xloc, _ as x = bvar_lname bv in
+     (FwdPose, [BFvar]),
+     CLambdaN (loc,[[x],Default Explicit,mkCHole xloc],mkCHole loc) ]
+ | [ "(" ssrbvar(bv) ":" lconstr(t) ")" ] ->
+   [ let x = bvar_lname bv in
+     (FwdPose, [BFdecl 1]),
+     CLambdaN (loc, [[x], Default Explicit, t], mkCHole loc) ]
+ | [ "(" ssrbvar(bv) ne_ssrbvar_list(bvs) ":" lconstr(t) ")" ] ->
+   [ let xs = List.map bvar_lname (bv :: bvs) in
+     let n = List.length xs in
+     (FwdPose, [BFdecl n]),
+     CLambdaN (loc, [xs, Default Explicit, t], mkCHole loc) ]
+ | [ "(" ssrbvar(id) ":" lconstr(t) ":=" lconstr(v) ")" ] ->
+   [ let loc' = Loc.join_loc (constr_loc t) (constr_loc v) in
+     let v' = CCast (loc', v, dC t) in
+     (FwdPose,[BFdef true]), CLetIn (loc,bvar_lname id, v',mkCHole loc) ]
+ | [ "(" ssrbvar(id) ":=" lconstr(v) ")" ] ->
+   [ (FwdPose,[BFdef false]), CLetIn (loc,bvar_lname id, v,mkCHole loc) ]
+END
+
+GEXTEND Gram
+  GLOBAL: ssrbinder;
+  ssrbinder: [
+  [  ["of" | "&"]; c = operconstr LEVEL "99" ->
+     let loc = !@loc in
+     (FwdPose, [BFvar]),
+     CLambdaN (loc,[[loc,Anonymous],Default Explicit,c],mkCHole loc) ]
+  ];
+END
+
+let rec binders_fmts = function
+  | ((_, h), _) :: bs -> h @ binders_fmts bs
+  | _ -> []
+
+let push_binders c2 bs =
+  let loc2 = constr_loc c2 in let mkloc loc1 = Loc.join_loc loc1 loc2 in
+  let rec loop ty c = function
+  | (_, CLambdaN (loc1, b, _)) :: bs when ty ->
+      CProdN (mkloc loc1, b, loop ty c bs)
+  | (_, CLambdaN (loc1, b, _)) :: bs ->
+      CLambdaN (mkloc loc1, b, loop ty c bs)
+  | (_, CLetIn (loc1, x, v, _)) :: bs ->
+      CLetIn (mkloc loc1, x, v, loop ty c bs)
+  | [] -> c
+  | _ -> anomaly "binder not a lambda nor a let in" in
+  match c2 with
+  | CCast (x, ct, CastConv cty) ->
+      (CCast (x, loop false ct bs, CastConv (loop true cty bs)))
+  | ct -> loop false ct bs
+
+let rec fix_binders = function
+  | (_, CLambdaN (_, [xs, _, t], _)) :: bs ->
+      LocalRawAssum (xs, Default Explicit, t) :: fix_binders bs
+  | (_, CLetIn (_, x, v, _)) :: bs ->
+    LocalRawDef (x, v) :: fix_binders bs
+  | _ -> []
+
+let pr_ssrstruct _ _ _ = function
+  | Some id -> str "{struct " ++ pr_id id ++ str "}"
+  | None -> mt ()
+
+ARGUMENT EXTEND ssrstruct TYPED AS ident option PRINTED BY pr_ssrstruct
+| [ "{" "struct" ident(id) "}" ] -> [ Some id ]
+| [ ] -> [ None ]
+END
+
+(** The "pose" tactic *)
+
+(* The plain pose form. *)
+
+let bind_fwd bs = function
+  | (fk, h), (ck, (rc, Some c)) ->
+    (fk,binders_fmts bs @ h), (ck,(rc,Some (push_binders c bs)))
+  | fwd -> fwd
+
+ARGUMENT EXTEND ssrposefwd TYPED AS ssrfwd PRINTED BY pr_ssrfwd
+  | [ ssrbinder_list(bs) ssrfwd(fwd) ] -> [ bind_fwd bs fwd ]
+END
+
+(* The pose fix form. *)
+
+let pr_ssrfixfwd _ _ _ (id, fwd) = str " fix " ++ pr_id id ++ pr_fwd fwd
+
+let bvar_locid = function
+  | CRef (Ident (loc, id), _) -> loc, id
+  | _ -> CErrors.error "Missing identifier after \"(co)fix\""
+
+
+ARGUMENT EXTEND ssrfixfwd TYPED AS ident * ssrfwd PRINTED BY pr_ssrfixfwd
+  | [ "fix" ssrbvar(bv) ssrbinder_list(bs) ssrstruct(sid) ssrfwd(fwd) ] ->
+    [ let (_, id) as lid = bvar_locid bv in
+      let (fk, h), (ck, (rc, oc)) = fwd in
+      let c = Option.get oc in
+      let has_cast, t', c' = match format_constr_expr h c with
+      | [Bcast t'], c' -> true, t', c'
+      | _ -> false, mkCHole (constr_loc c), c in
+      let lb = fix_binders bs in
+      let has_struct, i =
+        let rec loop = function
+          (l', Name id') :: _ when Option.equal Id.equal sid (Some id') -> true, (l', id')
+          | [l', Name id'] when sid = None -> false, (l', id')
+          | _ :: bn -> loop bn
+          | [] -> CErrors.error "Bad structural argument" in
+        loop (names_of_local_assums lb) in
+      let h' = BFrec (has_struct, has_cast) :: binders_fmts bs in
+      let fix = CFix (loc, lid, [lid, (Some i, CStructRec), lb, t', c']) in
+      id, ((fk, h'), (ck, (rc, Some fix))) ]
+END
+
+
+(* The pose cofix form. *)
+
+let pr_ssrcofixfwd _ _ _ (id, fwd) = str " cofix " ++ pr_id id ++ pr_fwd fwd
+
+ARGUMENT EXTEND ssrcofixfwd TYPED AS ssrfixfwd PRINTED BY pr_ssrcofixfwd
+  | [ "cofix" ssrbvar(bv) ssrbinder_list(bs) ssrfwd(fwd) ] ->
+    [ let _, id as lid = bvar_locid bv in
+      let (fk, h), (ck, (rc, oc)) = fwd in
+      let c = Option.get oc in
+      let has_cast, t', c' = match format_constr_expr h c with
+      | [Bcast t'], c' -> true, t', c'
+      | _ -> false, mkCHole (constr_loc c), c in
+      let h' = BFrec (false, has_cast) :: binders_fmts bs in
+      let cofix = CCoFix (loc, lid, [lid, fix_binders bs, t', c']) in
+      id, ((fk, h'), (ck, (rc, Some cofix)))
+    ]
+END
+
+let guard_setrhs s i = s.[i] = '{'
+
+let pr_setrhs occ prc prlc c =
+  if occ = nodocc then pr_guarded guard_setrhs prlc c else pr_docc occ ++ prc c
+
+let pr_fwd_guarded prval prval' = function
+| (fk, h), (_, (_, Some c)) ->
+  pr_gen_fwd prval pr_constr_expr prl_constr_expr fk (format_constr_expr h c)
+| (fk, h), (_, (c, None)) ->
+  pr_gen_fwd prval' pr_glob_constr prl_glob_constr fk (format_glob_constr h c)
+
+
+(* This does not print the type, it should be fixed... *)
+let pr_ssrsetfwd _ _ _ (((fk,_),(t,_)), docc) =
+  pr_gen_fwd (fun _ _ -> pr_cpattern)
+    (fun _ -> mt()) (fun _ -> mt()) fk ([Bcast ()],t)
+
+ARGUMENT EXTEND ssrsetfwd
+TYPED AS (ssrfwdfmt * (lcpattern * ssrterm option)) * ssrdocc
+PRINTED BY pr_ssrsetfwd
+| [ ":" lconstr(t) ":=" "{" ssrocc(occ) "}" cpattern(c) ] ->
+  [ mkssrFwdCast FwdPose loc (mk_lterm t) c, mkocc occ ]
+| [ ":" lconstr(t) ":=" lcpattern(c) ] ->
+  [ mkssrFwdCast FwdPose loc (mk_lterm t) c, nodocc ]
+| [ ":=" "{" ssrocc(occ) "}" cpattern(c) ] ->
+  [ mkssrFwdVal FwdPose c, mkocc occ ]
+| [ ":=" lcpattern(c) ] -> [ mkssrFwdVal FwdPose c, nodocc ]
+END
+
+
+let pr_ssrhavefwd _ _ prt (fwd, hint) = pr_fwd fwd ++ pr_hint prt hint
+
+ARGUMENT EXTEND ssrhavefwd TYPED AS ssrfwd * ssrhint PRINTED BY pr_ssrhavefwd
+| [ ":" lconstr(t) ssrhint(hint) ] -> [ mkFwdHint ":" t, hint ]
+| [ ":" lconstr(t) ":=" lconstr(c) ] -> [ mkFwdCast FwdHave loc t c, nohint ]
+| [ ":" lconstr(t) ":=" ] -> [ mkFwdHintNoTC ":" t, nohint ]
+| [ ":=" lconstr(c) ] -> [ mkFwdVal FwdHave c, nohint ]
+END
+
+let intro_id_to_binder = List.map (function 
+  | IpatId id ->
+      let xloc, _ as x = bvar_lname (mkCVar dummy_loc id) in
+      (FwdPose, [BFvar]),
+        CLambdaN (dummy_loc, [[x], Default Explicit, mkCHole xloc],
+          mkCHole dummy_loc)
+  | _ -> anomaly "non-id accepted as binder")
+
+let binder_to_intro_id = List.map (function
+  | (FwdPose, [BFvar]), CLambdaN (_,[ids,_,_],_)
+  | (FwdPose, [BFdecl _]), CLambdaN (_,[ids,_,_],_) ->
+      List.map (function (_, Name id) -> IpatId id | _ -> IpatAnon) ids
+  | (FwdPose, [BFdef _]), CLetIn (_,(_,Name id),_,_) -> [IpatId id]
+  | (FwdPose, [BFdef _]), CLetIn (_,(_,Anonymous),_,_) -> [IpatAnon]
+  | _ -> anomaly "ssrbinder is not a binder")
+
+let pr_ssrhavefwdwbinders _ _ prt (tr,((hpats, (fwd, hint)))) =
+  pr_hpats hpats ++ pr_fwd fwd ++ pr_hint prt hint
+
+ARGUMENT EXTEND ssrhavefwdwbinders
+  TYPED AS bool * (ssrhpats * (ssrfwd * ssrhint))
+  PRINTED BY pr_ssrhavefwdwbinders
+| [ ssrhpats_wtransp(trpats) ssrbinder_list(bs) ssrhavefwd(fwd) ] ->
+  [ let tr, pats = trpats in
+    let ((clr, pats), binders), simpl = pats in
+    let allbs = intro_id_to_binder binders @ bs in
+    let allbinders = binders @ List.flatten (binder_to_intro_id bs) in
+    let hint = bind_fwd allbs (fst fwd), snd fwd in
+    tr, ((((clr, pats), allbinders), simpl), hint) ]
+END
+
+
+let pr_ssrdoarg prc _ prt (((n, m), tac), clauses) =
+  pr_index n ++ pr_mmod m ++ pr_hintarg prt tac ++ pr_clauses clauses
+
+ARGUMENT EXTEND ssrdoarg
+  TYPED AS ((ssrindex * ssrmmod) * ssrhintarg) * ssrclauses
+  PRINTED BY pr_ssrdoarg
+| [ "YouShouldNotTypeThis" ] -> [ anomaly "Grammar placeholder match" ]
+END
+
+(* type ssrseqarg = ssrindex * (ssrtacarg * ssrtac option) *)
+
+let pr_seqtacarg prt = function
+  | (is_first, []), _ -> str (if is_first then "first" else "last")
+  | tac, Some dtac ->
+    hv 0 (pr_hintarg prt tac ++ spc() ++ str "|| " ++ prt tacltop dtac)
+  | tac, _ -> pr_hintarg prt tac
+
+let pr_ssrseqarg _ _ prt = function
+  | ArgArg 0, tac -> pr_seqtacarg prt tac
+  | i, tac -> pr_index i ++ str " " ++ pr_seqtacarg prt tac
+
+(* We must parse the index separately to resolve the conflict with *)
+(* an unindexed tactic.                                            *)
+ARGUMENT EXTEND ssrseqarg TYPED AS ssrindex * (ssrhintarg * tactic option)
+                          PRINTED BY pr_ssrseqarg
+| [ "YouShouldNotTypeThis" ] -> [ anomaly "Grammar placeholder match" ]
+END
+
+let sq_brace_tacnames =
+   ["first"; "solve"; "do"; "rewrite"; "have"; "suffices"; "wlog"]
+   (* "by" is a keyword *)
+let accept_ssrseqvar strm =
+  match Compat.get_tok (stream_nth 0 strm) with
+  | Tok.IDENT id when not (List.mem id sq_brace_tacnames) ->
+     accept_before_syms_or_ids ["["] ["first";"last"] strm
+  | _ -> raise Stream.Failure
+
+let test_ssrseqvar = Gram.Entry.of_parser "test_ssrseqvar" accept_ssrseqvar
+
+let swaptacarg (loc, b) = (b, []), Some (TacId [])
+
+let check_seqtacarg dir arg = match snd arg, dir with
+  | ((true, []), Some (TacAtom (loc, _))), L2R ->
+    loc_error loc (str "expected \"last\"")
+  | ((false, []), Some (TacAtom (loc, _))), R2L ->
+    loc_error loc (str "expected \"first\"")
+  | _, _ -> arg
+
+let ssrorelse = Gram.entry_create "ssrorelse"
+GEXTEND Gram
+  GLOBAL: ssrorelse ssrseqarg;
+  ssrseqidx: [
+    [ test_ssrseqvar; id = Prim.ident -> ArgVar (!@loc, id)
+    | n = Prim.natural -> ArgArg (check_index !@loc n)
+    ] ];
+  ssrswap: [[ IDENT "first" -> !@loc, true | IDENT "last" -> !@loc, false ]];
+  ssrorelse: [[ "||"; tac = tactic_expr LEVEL "2" -> tac ]];
+  ssrseqarg: [
+    [ arg = ssrswap -> noindex, swaptacarg arg
+    | i = ssrseqidx; tac = ssrortacarg; def = OPT ssrorelse -> i, (tac, def)
+    | i = ssrseqidx; arg = ssrswap -> i, swaptacarg arg
+    | tac = tactic_expr LEVEL "3" -> noindex, (mk_hint tac, None)
+    ] ];
+END
 (* We wipe out all the keywords generated by the grammar rules we defined. *)
 (* The user is supposed to Require Import ssreflect or Require ssreflect   *)
 (* and Import ssreflect.SsrSyntax to obtain these keywords and as a         *)
 (* consequence the extended ssreflect grammar.                             *)
 let () = CLexer.unfreeze frozen_lexer ;;
+
 
 (* vim: set filetype=ocaml foldmethod=marker: *)

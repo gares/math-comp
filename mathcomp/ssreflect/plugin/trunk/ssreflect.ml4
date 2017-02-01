@@ -74,41 +74,16 @@ open Tok
 
 open Ssrmatching_plugin
 open Ssrmatching
+open Ssrast
 open Ssrcommon
+open Ssrparser
 
 module RelDecl = Context.Rel.Declaration
 module NamedDecl = Context.Named.Declaration
 (* Forward references to tactics used everywhere in the language *)
 let simplest_newcase ?ind x gl = Hook.get simplest_newcase_tac ?ind x gl
-let ipat_rewrite occ dir gl = Hook.get ipat_rewrite_tac occ dir gl
-let move_top_with_view ~next c r v ist gl =
-  Hook.get move_top_with_view_tac ~next c r v ist gl
 
 module Intset = Evar.Set
-
-(** look up a name in the ssreflect internals module *)
-let ssrdirpath = make_dirpath [id_of_string "ssreflect"]
-let ssrqid name = make_qualid ssrdirpath (id_of_string name) 
-let ssrtopqid name = make_short_qualid (id_of_string name) 
-let locate_reference qid =
-  Smartlocate.global_of_extended_global (Nametab.locate_extended qid)
-let mkSsrRef name =
-  try locate_reference (ssrqid name) with Not_found ->
-  try locate_reference (ssrtopqid name) with Not_found ->
-  CErrors.error "Small scale reflection library not loaded"
-let mkSsrRRef name = GRef (dummy_loc, mkSsrRef name,None), None
-let mkSsrConst name env sigma =
-  Sigma.fresh_global env sigma (mkSsrRef name)
-let pf_mkSsrConst name gl =
-  let sigma, env, it = project gl, pf_env gl, sig_it gl in
-  let sigma = Sigma.Unsafe.of_evar_map sigma in
-  let Sigma (t, sigma, _) = mkSsrConst name env sigma in
-  let sigma = Sigma.to_evar_map sigma in
-  t, re_sig it sigma
-let pf_fresh_global name gl =
-  let sigma, env, it = project gl, pf_env gl, sig_it gl in
-  let sigma,t  = Evd.fresh_global env sigma name in
-  t, re_sig it sigma
 
 (** Ssreflect load check. *)
 
@@ -144,7 +119,6 @@ let _ =
 let pp s = !pp_ref s
 
 (** Utils {{{ *****************************************************************)
-let env_size env = List.length (Environ.named_context env)
 let safeDestApp c =
   match kind_of_term c with App (f, a) -> f, a | _ -> c, [| |]
 let get_index = function ArgArg i -> i | _ ->
@@ -185,20 +159,6 @@ let mkCLetIn loc name bo t =
 let mkCArrow loc ty t =
    CProdN (loc, [[dummy_loc,Anonymous], Default Explicit, ty], t)
 let mkCCast loc t ty = CCast (loc,t, dC ty)
-(** Constructors for rawconstr *)
-let rec mkRHoles n = if n > 0 then mkRHole :: mkRHoles (n - 1) else []
-let rec isRHoles = function GHole _ :: cl -> isRHoles cl | cl -> cl = []
-let mkRApp f args = if args = [] then f else GApp (dummy_loc, f, args)
-let mkRVar id = GRef (dummy_loc, VarRef id,None)
-let mkRltacVar id = GVar (dummy_loc, id)
-let mkRCast rc rt =  GCast (dummy_loc, rc, dC rt)
-let mkRType =  GSort (dummy_loc, GType [])
-let mkRProp =  GSort (dummy_loc, GProp)
-let mkRArrow rt1 rt2 = GProd (dummy_loc, Anonymous, Explicit, rt1, rt2)
-let mkRConstruct c = GRef (dummy_loc, ConstructRef c,None)
-let mkRInd mind = GRef (dummy_loc, IndRef mind,None)
-let mkRLambda n s t = GLambda (dummy_loc, n, Explicit, s, t)
-
 (** Constructors for constr *)
 let pf_e_type_of gl t =
   let sigma, env, it = project gl, pf_env gl, sig_it gl in
@@ -221,17 +181,6 @@ let mkRefl t c gl =
 (* Application to a sequence of n rels (for building eta-expansions). *)
 (* The rel indices decrease down to imin (inclusive), unless n < 0,   *)
 (* in which case they're incresing (from imin).                       *)
-let mkEtaApp c n imin =
-  if n = 0 then c else
-  let nargs, mkarg =
-    if n < 0 then -n, (fun i -> mkRel (imin + i)) else
-    let imax = imin + n - 1 in n, (fun i -> mkRel (imax - i)) in
-  mkApp (c, Array.init nargs mkarg)
-(* Same, but optimizing head beta redexes *)
-let rec whdEtaApp c n =
-  if n = 0 then c else match kind_of_term c with
-  | Lambda (_, _, c') -> whdEtaApp c' (n - 1)
-  | _ -> mkEtaApp (lift n c) n 1
 let mkType () = Universes.new_Type (Lib.cwd ())
 
 (* ssrterm conbinators *)
@@ -243,8 +192,6 @@ let combineCG t1 t2 f g = match t1, t2 with
 let loc_ofCG = function
  | (_, (s, None)) -> Glob_ops.loc_of_glob_constr s
  | (_, (_, Some s)) -> Constrexpr_ops.constr_loc s
-
-let pf_type_of gl t = let sigma, ty = pf_type_of gl t in re_sig (sig_it gl)  sigma, ty
 
 let map_fold_constr g f ctx acc cstr =
   let array_f ctx acc x = let x, acc = f ctx acc x in acc, x in
@@ -300,13 +247,6 @@ let map_fold_constr g f ctx acc cstr =
       (if Array.for_all2 (==) tl tl' && Array.for_all2 (==) bl bl'
       then cstr
       else mkCoFix (ln,(lna,tl',bl'))), acc
-
-let pf_merge_uc uc gl =
-  re_sig (sig_it gl) (Evd.merge_universe_context (Refiner.project gl) uc)
-
-let pf_merge_uc_of sigma gl =
-  let ucst = Evd.evar_universe_context sigma in
-  pf_merge_uc ucst gl
 
 (* }}} *)
 
@@ -421,44 +361,6 @@ let _ =
       Goptions.optdepr  = false;
       Goptions.optwrite = (fun b -> ssroldreworder := b) }
 
-let ssrhaveNOtcresolution = Summary.ref ~name:"SSR:havenotcresolution" false
-
-let inHaveTCResolution = Libobject.declare_object {
-  (Libobject.default_object "SSRHAVETCRESOLUTION") with
-  Libobject.cache_function = (fun (_,v) -> ssrhaveNOtcresolution := v);
-  Libobject.load_function = (fun _ (_,v) -> ssrhaveNOtcresolution := v);
-  Libobject.classify_function = (fun v -> Libobject.Keep v);
-}
-
-let _ =
-  Goptions.declare_bool_option
-    { Goptions.optsync  = false;
-      Goptions.optname  = "have type classes";
-      Goptions.optkey   = ["SsrHave";"NoTCResolution"];
-      Goptions.optread  = (fun _ -> !ssrhaveNOtcresolution);
-      Goptions.optdepr  = false;
-      Goptions.optwrite = (fun b ->
-        Lib.add_anonymous_leaf (inHaveTCResolution b)) }
-
-
-(** Primitive parsing to avoid syntax conflicts with basic tactics. *)
-
-let accept_before_syms syms strm =
-  match Compat.get_tok (stream_nth 1 strm) with
-  | Tok.KEYWORD sym when List.mem sym syms -> ()
-  | _ -> raise Stream.Failure
-
-let accept_before_syms_or_any_id syms strm =
-  match Compat.get_tok (stream_nth 1 strm) with
-  | Tok.KEYWORD sym when List.mem sym syms -> ()
-  | Tok.IDENT _ -> ()
-  | _ -> raise Stream.Failure
-
-let accept_before_syms_or_ids syms ids strm =
-  match Compat.get_tok (stream_nth 1 strm) with
-  | Tok.KEYWORD sym when List.mem sym syms -> ()
-  | Tok.IDENT id when List.mem id ids -> ()
-  | _ -> raise Stream.Failure
 
 (** Pretty-printing utilities *)
 
@@ -483,8 +385,6 @@ let msgtac gl = pf_msg gl; tclIDTAC gl
 let last_goal gls = let sigma, gll = Refiner.unpackage gls in
    Refiner.repackage sigma (List.nth gll (List.length gll - 1))
 
-let pf_type_id gl t = id_of_string (hdchar (pf_env gl) t)
-
 let is_pf_var c = isVar c && not_section_id (destVar c)
 
 let pf_ids_of_proof_hyps gl =
@@ -492,13 +392,6 @@ let pf_ids_of_proof_hyps gl =
     let id = NamedDecl.get_id decl in
     if not_section_id id then id :: ids else ids in
   Context.Named.fold_outside add_hyp (pf_hyps gl) ~init:[]
-
-let pf_nf_evar gl e = Reductionops.nf_evar (project gl) e
-
-let pf_partial_solution gl t evl =
-  let sigma, g = project gl, sig_it gl in
-  let sigma = Goal.V82.partial_solution sigma g t in
-  re_sig (List.map (fun x -> (fst (destEvar x))) evl) sigma
 
 let pf_new_evar gl ty =
   let sigma, env, it = project gl, pf_env gl, sig_it gl in
@@ -509,10 +402,7 @@ let pf_new_evar gl ty =
 
 (* Basic tactics *)
 
-let convert_concl_no_check t = convert_concl_no_check t DEFAULTcast
-let convert_concl t = convert_concl t DEFAULTcast
 let reduct_in_concl t = reduct_in_concl (t, DEFAULTcast)
-let havetac id c = Proofview.V82.of_tactic (pose_proof (Name id) c)
 let settac id c = letin_tac None (Name id) c None
 let posetac id cl = Proofview.V82.of_tactic (settac id cl nowhere)
 let basecuttac name c gl =
@@ -555,10 +445,6 @@ let _ =
 let is_ssr_reserved s =
   let n = String.length s in n > 2 && s.[0] = '_' && s.[n - 1] = '_'
 
-let internal_names = ref []
-let add_internal_name pt = internal_names := pt :: !internal_names
-let is_internal_name s = List.exists (fun p -> p s) !internal_names
-
 let ssr_id_of_string loc s =
   if is_ssr_reserved s && is_ssr_loaded () then begin
     if !ssr_reserved_ids then
@@ -579,445 +465,16 @@ GEXTEND Gram
   Prim.ident: [[ s = IDENT; ssr_null_entry -> ssr_id_of_string !@loc s ]];
 END
 
-let mk_internal_id s =
-  let s' = Bytes.of_string (sprintf "_%s_" s) in
-  for i = 1 to Bytes.length s do if s'.[i] = ' ' then Bytes.set s' i '_' done;
-  let s' = Bytes.to_string s' in
-  add_internal_name ((=) s'); id_of_string s'
-
-let same_prefix s t n =
-  let rec loop i = i = n || s.[i] = t.[i] && loop (i + 1) in loop 0
-
-let skip_digits s =
-  let n = String.length s in 
-  let rec loop i = if i < n && is_digit s.[i] then loop (i + 1) else i in loop
-
-let mk_tagged_id t i = id_of_string (sprintf "%s%d_" t i)
-let is_tagged t s =
-  let n = String.length s - 1 and m = String.length t in
-  m < n && s.[n] = '_' && same_prefix s t m && skip_digits s m = n
-
 let perm_tag = "_perm_Hyp_"
 let _ = add_internal_name (is_tagged perm_tag)
 let mk_perm_id =
   let salt = ref 1 in 
   fun () -> salt := !salt mod 10000 + 1; mk_tagged_id perm_tag !salt
 
-let evar_tag = "_evar_"
-let _ = add_internal_name (is_tagged evar_tag)
-let mk_evar_name n = Name (mk_tagged_id evar_tag n)
-let nb_evar_deps = function
-  | Name id ->
-    let s = string_of_id id in
-    if not (is_tagged evar_tag s) then 0 else
-    let m = String.length evar_tag in
-    (try int_of_string (String.sub s m (String.length s - 1 - m)) with _ -> 0)
-  | _ -> 0
-
-let discharged_tag = "_discharged_"
-let mk_discharged_id id =
-  id_of_string (sprintf "%s%s_" discharged_tag (string_of_id id))
-let has_discharged_tag s =
-  let m = String.length discharged_tag and n = String.length s - 1 in
-  m < n && s.[n] = '_' && same_prefix s discharged_tag m
-let _ = add_internal_name has_discharged_tag
-let is_discharged_id id = has_discharged_tag (string_of_id id)
-
-let wildcard_tag = "_the_"
-let wildcard_post = "_wildcard_"
-let mk_wildcard_id i =
-  id_of_string (sprintf "%s%s%s" wildcard_tag (String.ordinal i) wildcard_post)
-let has_wildcard_tag s = 
-  let n = String.length s in let m = String.length wildcard_tag in
-  let m' = String.length wildcard_post in
-  n < m + m' + 2 && same_prefix s wildcard_tag m &&
-  String.sub s (n - m') m' = wildcard_post &&
-  skip_digits s m = n - m' - 2
-let _ = add_internal_name has_wildcard_tag
-
-let tmp_tag = "_the_"
-let tmp_post = "_tmp_"
-let mk_tmp_id i =
-  id_of_string (sprintf "%s%s%s" tmp_tag (String.ordinal i) tmp_post)
-
-let max_suffix m (t, j0 as tj0) id  =
-  let s = string_of_id id in let n = String.length s - 1 in
-  let dn = String.length t - 1 - n in let i0 = j0 - dn in
-  if not (i0 >= m && s.[n] = '_' && same_prefix s t m) then tj0 else
-  let rec loop i =
-    if i < i0 && s.[i] = '0' then loop (i + 1) else
-    if (if i < i0 then skip_digits s i = n else le_s_t i) then s, i else tj0
-  and le_s_t i =
-    let ds = s.[i] and dt = t.[i + dn] in
-    if ds = dt then i = n || le_s_t (i + 1) else
-    dt < ds && skip_digits s i = n in
-  loop m
-
-let mk_anon_id t gl =
-  let m, si0, id0 =
-    let s = ref (sprintf  "_%s_" t) in
-    if is_internal_name !s then s := "_" ^ !s;
-    let n = String.length !s - 1 in
-    let rec loop i j =
-      let d = !s.[i] in if not (is_digit d) then i + 1, j else
-      loop (i - 1) (if d = '0' then j else i) in
-    let m, j = loop (n - 1) n in m, (!s, j), id_of_string !s in
-  let gl_ids = pf_ids_of_hyps gl in
-  if not (List.mem id0 gl_ids) then id0 else
-  let s, i = List.fold_left (max_suffix m) si0 gl_ids in
-  let s = Bytes.of_string s in
-  let n = Bytes.length s - 1 in
-  let set = Bytes.set s in
-  let rec loop i =
-    if s.[i] = '9' then (set i '0'; loop (i - 1)) else
-    if i < m then (set n '0'; set m '1'; s ^ "_") else
-    (set i (Char.chr (Char.code s.[i] + 1)); s) in
-  id_of_string (Bytes.to_string (loop (n - 1)))
   
 (* }}} *)
 
-(* Temporary names, + intro pattern *)
-let new_tmp_id ctx =
-  let id = mk_tmp_id (1 + List.length ctx.tmp_ids) in
-  let orig = ref Anonymous in
-  (id, orig), { ctx with tmp_ids = (id, orig) :: ctx.tmp_ids }
-;;
-
-let gentac_ref = ref (fun _ _ _ -> assert false)
-
-let rename_hd_prod orig_name_ref gl =
-  match kind_of_term (pf_concl gl) with
-  | Prod(_,src,tgt) ->
-      new_tac (convert_concl_no_check (mkProd (!orig_name_ref,src,tgt))) gl
-  | _ -> CErrors.anomaly (str "gentac creates no product")
-
-let gen_tmp_ids
-  ?(ist=Geninterp.({ lfun = Id.Map.empty; extra = TacStore.empty })) gl
-=
-  let gl, ctx = pull_ctx gl in
-  push_ctxs ctx
-    (tclTHENLIST
-      (List.map (fun (id,orig_ref) ->
-        tclTHEN 
-        (!gentac_ref ist ((None,Some(false,[])),cpattern_of_id id))
-        (rename_hd_prod orig_ref))
-      ctx.tmp_ids) gl)
-;;
-
-(* wildcard names *)
-let new_wild_id ctx =
-  let i = 1 + List.length ctx.wild_ids in
-  let id = mk_wildcard_id i in
-  id, { ctx with wild_ids = id :: ctx.wild_ids }
-
-let clear_wilds wilds gl =
-  Proofview.V82.of_tactic (clear (List.filter (fun id -> List.mem id wilds) (pf_ids_of_hyps gl))) gl
-
-let clear_with_wilds wilds clr0 gl =
-  let extend_clr clr nd =
-    let id = NamedDecl.get_id nd in
-    if List.mem id clr || not (List.mem id wilds) then clr else
-    let vars = global_vars_set_of_decl (pf_env gl) nd in
-    let occurs id' = Idset.mem id' vars in
-    if List.exists occurs clr then id :: clr else clr in
-  Proofview.V82.of_tactic (clear (Context.Named.fold_inside extend_clr ~init:clr0 (pf_hyps gl))) gl
-
-let clear_wilds_and_tmp_and_delayed_ids gl =
-  let _, ctx = pull_ctx gl in
-  tac_ctx
-   (tclTHEN
-    (clear_with_wilds ctx.wild_ids ctx.delayed_clears)
-    (clear_wilds (List.map fst ctx.tmp_ids @ ctx.wild_ids))) gl
-
-(* we reduce head beta redexes *)
-let betared env = 
-  CClosure.(create_clos_infos 
-   (RedFlags.mkflags [RedFlags.fBETA])
-    env)
-;;
-let rec fst_prod red tac = PG.nf_enter { PG.enter = begin fun gl ->
-  let concl = PG.concl (PG.assume gl) in
-  match kind_of_term concl with
-  | Prod (id,_,tgt) | LetIn(id,_,_,tgt) -> tac id
-  | _ -> if red then TN.tclZEROMSG (str"No product even after head-reduction.")
-         else TN.tclTHEN hnf_in_concl (fst_prod true tac)
-end }
-;;
-let introid ?(orig=ref Anonymous) name = tclTHEN (fun gl ->
-   let g, env = pf_concl gl, pf_env gl in
-   match kind_of_term g with
-   | App (hd, _) when isLambda hd -> 
-     let g = CClosure.whd_val (betared env) (CClosure.inject g) in
-     Proofview.V82.of_tactic (convert_concl_no_check g) gl
-   | _ -> tclIDTAC gl)
-  (Proofview.V82.of_tactic
-    (fst_prod false (fun id -> orig := id; intro_mustbe_force name)))
-;;
-
 (* We must not anonymize context names discharged by the "in" tactical. *)
-
-let ssr_anon_hyp = "Hyp"
-
-let anontac decl gl =
-  let id =  match RelDecl.get_name decl with
-  | Name id ->
-    if is_discharged_id id then id else mk_anon_id (string_of_id id) gl
-  | _ -> mk_anon_id ssr_anon_hyp gl in
-  introid id gl
-
-let rec constr_name c = match kind_of_term c with
-  | Var id -> Name id
-  | Cast (c', _, _) -> constr_name c'
-  | Const (cn,_) -> Name (id_of_label (con_label cn))
-  | App (c', _) -> constr_name c'
-  | _ -> Anonymous
-
-
-(** Open term to lambda-term coercion  {{{ ************************************)
-
-(* This operation takes a goal gl and an open term (sigma, t), and   *)
-(* returns a term t' where all the new evars in sigma are abstracted *)
-(* with the mkAbs argument, i.e., for mkAbs = mkLambda then there is *)
-(* some duplicate-free array args of evars of sigma such that the    *)
-(* term mkApp (t', args) is convertible to t.                        *)
-(* This makes a useful shorthand for local definitions in proofs,    *)
-(* i.e., pose succ := _ + 1 means pose succ := fun n : nat => n + 1, *)
-(* and, in context of the the 4CT library, pose mid := maps id means *)
-(*    pose mid := fun d : detaSet => @maps d d (@id (datum d))       *)
-(* Note that this facility does not extend to set, which tries       *)
-(* instead to fill holes by matching a goal subterm.                 *)
-(* The argument to "have" et al. uses product abstraction, e.g.      *)
-(*    have Hmid: forall s, (maps id s) = s.                          *)
-(* stands for                                                        *)
-(*    have Hmid: forall (d : dataSet) (s : seq d), (maps id s) = s.  *)
-(* We also use this feature for rewrite rules, so that, e.g.,        *)
-(*   rewrite: (plus_assoc _ 3).                                      *)
-(* will execute as                                                   *)
-(*   rewrite (fun n => plus_assoc n 3)                               *)
-(* i.e., it will rewrite some subterm .. + (3 + ..) to .. + 3 + ...  *)
-(* The convention is also used for the argument of the congr tactic, *)
-(* e.g., congr (x + _ * 1).                                          *)
-
-(* Replace new evars with lambda variables, retaining local dependencies *)
-(* but stripping global ones. We use the variable names to encode the    *)
-(* the number of dependencies, so that the transformation is reversible. *)
-
-let pf_abs_evars gl (sigma, c0) =
-  let sigma0, ucst = project gl, Evd.evar_universe_context sigma in
-  let nenv = env_size (pf_env gl) in
-  let abs_evar n k =
-    let evi = Evd.find sigma k in
-    let dc = List.firstn n (evar_filtered_context evi) in
-    let abs_dc c = function
-    | NamedDecl.LocalDef (x,b,t) -> mkNamedLetIn x b t (mkArrow t c)
-    | NamedDecl.LocalAssum (x,t) -> mkNamedProd x t c in
-    let t = Context.Named.fold_inside abs_dc ~init:evi.evar_concl dc in
-    Evarutil.nf_evar sigma t in
-  let rec put evlist c = match kind_of_term c with
-  | Evar (k, a) ->  
-    if List.mem_assoc k evlist || Evd.mem sigma0 k then evlist else
-    let n = max 0 (Array.length a - nenv) in
-    let t = abs_evar n k in (k, (n, t)) :: put evlist t
-  | _ -> fold_constr put evlist c in
-  let evlist = put [] c0 in
-  if evlist = [] then 0, c0,[], ucst else
-  let rec lookup k i = function
-    | [] -> 0, 0
-    | (k', (n, _)) :: evl -> if k = k' then i, n else lookup k (i + 1) evl in
-  let rec get i c = match kind_of_term c with
-  | Evar (ev, a) ->
-    let j, n = lookup ev i evlist in
-    if j = 0 then map_constr (get i) c else if n = 0 then mkRel j else
-    mkApp (mkRel j, Array.init n (fun k -> get i a.(n - 1 - k)))
-  | _ -> map_constr_with_binders ((+) 1) get i c in
-  let rec loop c i = function
-  | (_, (n, t)) :: evl ->
-    loop (mkLambda (mk_evar_name n, get (i - 1) t, c)) (i - 1) evl
-  | [] -> c in
-  List.length evlist, loop (get 1 c0) 1 evlist, List.map fst evlist, ucst
-
-
-
-(* As before but if (?i : T(?j)) and (?j : P : Prop), then the lambda for i
- * looks like (fun evar_i : (forall pi : P. T(pi))) thanks to "loopP" and all 
- * occurrences of evar_i are replaced by (evar_i evar_j) thanks to "app".
- *
- * If P can be solved by ssrautoprop (that defaults to trivial), then
- * the corresponding lambda looks like (fun evar_i : T(c)) where c is 
- * the solution found by ssrautoprop.
- *)
-let ssrautoprop_tac = ref (fun gl -> assert false)
-
-(* Thanks to Arnaud Spiwack for this snippet *)
-let call_on_evar tac e s =
-  let { it = gs ; sigma = s } =
-    tac { it = e ; sigma = s; } in
-  gs, s
-
-let pf_abs_evars_pirrel gl (sigma, c0) =
-  pp(lazy(str"==PF_ABS_EVARS_PIRREL=="));
-  pp(lazy(str"c0= " ++ pr_constr c0));
-  let sigma0 = project gl in
-  let c0 = Evarutil.nf_evar sigma0 (Evarutil.nf_evar sigma c0) in
-  let nenv = env_size (pf_env gl) in
-  let abs_evar n k =
-    let evi = Evd.find sigma k in
-    let dc = List.firstn n (evar_filtered_context evi) in
-    let abs_dc c = function
-    | NamedDecl.LocalDef (x,b,t) -> mkNamedLetIn x b t (mkArrow t c)
-    | NamedDecl.LocalAssum (x,t) -> mkNamedProd x t c in
-    let t = Context.Named.fold_inside abs_dc ~init:evi.evar_concl dc in
-    Evarutil.nf_evar sigma0 (Evarutil.nf_evar sigma t) in
-  let rec put evlist c = match kind_of_term c with
-  | Evar (k, a) ->  
-    if List.mem_assoc k evlist || Evd.mem sigma0 k then evlist else
-    let n = max 0 (Array.length a - nenv) in
-    let k_ty = 
-      Retyping.get_sort_family_of 
-        (pf_env gl) sigma (Evd.evar_concl (Evd.find sigma k)) in
-    let is_prop = k_ty = InProp in
-    let t = abs_evar n k in (k, (n, t, is_prop)) :: put evlist t
-  | _ -> fold_constr put evlist c in
-  let evlist = put [] c0 in
-  if evlist = [] then 0, c0 else
-  let pr_constr t = pr_constr (Reductionops.nf_beta (project gl) t) in
-  pp(lazy(str"evlist=" ++ pr_list (fun () -> str";")
-    (fun (k,_) -> str(Evd.string_of_existential k)) evlist));
-  let evplist = 
-    let depev = List.fold_left (fun evs (_,(_,t,_)) -> 
-        Intset.union evs (Evarutil.undefined_evars_of_term sigma t)) Intset.empty evlist in
-    List.filter (fun (i,(_,_,b)) -> b && Intset.mem i depev) evlist in
-  let evlist, evplist, sigma = 
-    if evplist = [] then evlist, [], sigma else
-    List.fold_left (fun (ev, evp, sigma) (i, (_,t,_) as p) ->
-      try 
-        let ng, sigma = call_on_evar !ssrautoprop_tac i sigma in
-        if (ng <> []) then errorstrm (str "Should we tell the user?");
-        List.filter (fun (j,_) -> j <> i) ev, evp, sigma
-      with _ -> ev, p::evp, sigma) (evlist, [], sigma) (List.rev evplist) in
-  let c0 = Evarutil.nf_evar sigma c0 in
-  let evlist = 
-    List.map (fun (x,(y,t,z)) -> x,(y,Evarutil.nf_evar sigma t,z)) evlist in
-  let evplist = 
-    List.map (fun (x,(y,t,z)) -> x,(y,Evarutil.nf_evar sigma t,z)) evplist in
-  pp(lazy(str"c0= " ++ pr_constr c0));
-  let rec lookup k i = function
-    | [] -> 0, 0
-    | (k', (n,_,_)) :: evl -> if k = k' then i,n else lookup k (i + 1) evl in
-  let rec get evlist i c = match kind_of_term c with
-  | Evar (ev, a) ->
-    let j, n = lookup ev i evlist in
-    if j = 0 then map_constr (get evlist i) c else if n = 0 then mkRel j else
-    mkApp (mkRel j, Array.init n (fun k -> get evlist i a.(n - 1 - k)))
-  | _ -> map_constr_with_binders ((+) 1) (get evlist) i c in
-  let rec app extra_args i c = match decompose_app c with
-  | hd, args when isRel hd && destRel hd = i ->
-      let j = destRel hd in
-      mkApp (mkRel j, Array.of_list (List.map (lift (i-1)) extra_args @ args))
-  | _ -> map_constr_with_binders ((+) 1) (app extra_args) i c in
-  let rec loopP evlist c i = function
-  | (_, (n, t, _)) :: evl ->
-    let t = get evlist (i - 1) t in
-    let n = Name (id_of_string (ssr_anon_hyp ^ string_of_int n)) in 
-    loopP evlist (mkProd (n, t, c)) (i - 1) evl
-  | [] -> c in
-  let rec loop c i = function
-  | (_, (n, t, _)) :: evl ->
-    let evs = Evarutil.undefined_evars_of_term sigma t in
-    let t_evplist = List.filter (fun (k,_) -> Intset.mem k evs) evplist in
-    let t = loopP t_evplist (get t_evplist 1 t) 1 t_evplist in
-    let t = get evlist (i - 1) t in
-    let extra_args = 
-      List.map (fun (k,_) -> mkRel (fst (lookup k i evlist))) 
-        (List.rev t_evplist) in
-    let c = if extra_args = [] then c else app extra_args 1 c in
-    loop (mkLambda (mk_evar_name n, t, c)) (i - 1) evl
-  | [] -> c in
-  let res = loop (get evlist 1 c0) 1 evlist in
-  pp(lazy(str"res= " ++ pr_constr res));
-  List.length evlist, res
-
-(* Strip all non-essential dependencies from an abstracted term, generating *)
-(* standard names for the abstracted holes.                                 *)
-
-let pf_abs_cterm gl n c0 =
-  if n <= 0 then c0 else
-  let noargs = [|0|] in
-  let eva = Array.make n noargs in
-  let rec strip i c = match kind_of_term c with
-  | App (f, a) when isRel f ->
-    let j = i - destRel f in
-    if j >= n || eva.(j) = noargs then mkApp (f, Array.map (strip i) a) else
-    let dp = eva.(j) in
-    let nd = Array.length dp - 1 in
-    let mkarg k = strip i a.(if k < nd then dp.(k + 1) - j else k + dp.(0)) in
-    mkApp (f, Array.init (Array.length a - dp.(0)) mkarg)
-  | _ -> map_constr_with_binders ((+) 1) strip i c in
-  let rec strip_ndeps j i c = match kind_of_term c with
-  | Prod (x, t, c1) when i < j ->
-    let dl, c2 = strip_ndeps j (i + 1) c1 in
-    if noccurn 1 c2 then dl, lift (-1) c2 else
-    i :: dl, mkProd (x, strip i t, c2)
-  | LetIn (x, b, t, c1) when i < j ->
-    let _, _, c1' = destProd c1 in
-    let dl, c2 = strip_ndeps j (i + 1) c1' in
-    if noccurn 1 c2 then dl, lift (-1) c2 else
-    i :: dl, mkLetIn (x, strip i b, strip i t, c2)
-  | _ -> [], strip i c in
-  let rec strip_evars i c = match kind_of_term c with
-    | Lambda (x, t1, c1) when i < n ->
-      let na = nb_evar_deps x in
-      let dl, t2 = strip_ndeps (i + na) i t1 in
-      let na' = List.length dl in
-      eva.(i) <- Array.of_list (na - na' :: dl);
-      let x' =
-        if na' = 0 then Name (pf_type_id gl t2) else mk_evar_name na' in
-      mkLambda (x', t2, strip_evars (i + 1) c1)
-(*      if noccurn 1 c2 then lift (-1) c2 else
-      mkLambda (Name (pf_type_id gl t2), t2, c2) *)
-    | _ -> strip i c in
-  strip_evars 0 c0
-
-(* Undo the evar abstractions. Also works for non-evar variables. *)
-
-let pf_unabs_evars gl ise n c0 =
-  if n = 0 then c0 else
-  let evv = Array.make n mkProp in
-  let nev = ref 0 in
-  let env0 = pf_env gl in
-  let nenv0 = env_size env0 in
-  let rec unabs i c = match kind_of_term c with
-  | Rel j when i - j < !nev -> evv.(i - j)
-  | App (f, a0) when isRel f ->
-    let a = Array.map (unabs i) a0 in
-    let j = i - destRel f in
-    if j >= !nev then mkApp (f, a) else
-    let ev, eva = destEvar evv.(j) in
-    let nd = Array.length eva - nenv0 in
-    if nd = 0 then mkApp (evv.(j), a) else
-    let evarg k = if k < nd then a.(nd - 1 - k) else eva.(k) in
-    let c' = mkEvar (ev, Array.init (nd + nenv0) evarg) in
-    let na = Array.length a - nd in
-    if na = 0 then c' else mkApp (c', Array.sub a nd na)
-  | _ -> map_constr_with_binders ((+) 1) unabs i c in
-  let push_rel = Environ.push_rel in
-  let rec mk_evar j env i c = match kind_of_term c with
-  | Prod (x, t, c1) when i < j ->
-    mk_evar j (push_rel (RelDecl.LocalAssum (x, unabs i t)) env) (i + 1) c1
-  | LetIn (x, b, t, c1) when i < j ->
-    let _, _, c2 = destProd c1 in
-    mk_evar j (push_rel (RelDecl.LocalDef (x, unabs i b, unabs i t)) env) (i + 1) c2
-  | _ -> Evarutil.e_new_evar env ise (unabs i c) in
-  let rec unabs_evars c =
-    if !nev = n then unabs n c else match kind_of_term c with
-  | Lambda (x, t, c1) when !nev < n ->
-    let i = !nev in
-    evv.(i) <- mk_evar (i + nb_evar_deps x) env0 i t;
-    incr nev; unabs_evars c1
-  | _ -> unabs !nev c in
-  unabs_evars c0
-
-(* }}} *)
 
 (** Tactical extensions. {{{ **************************************************)
 
@@ -1047,13 +504,15 @@ let set_pr_ssrtac name prec afmt =
     | ArgSsr s -> Egramml.GramTerminal s
     | ArgCoq at -> Egramml.GramTerminal "COQ_ARG") afmt in
   let tacname = ssrtac_name name in ()
+  (* FIXME *)
+(*
+   Pptactic.declare_ml_tactic_pprule tacname
+    { Pptactic.pptac_args = mk_akey afmt;
+      Pptactic.pptac_prods = (prec, fmt) }
+*)
 
 let ssrtac_atom loc name args = TacML (loc, ssrtac_entry name 0, args)
 let ssrtac_expr = ssrtac_atom
-
-
-let ssrevaltac ist gtac =
-  Proofview.V82.of_tactic (tactic_of_value ist gtac)
 
 (* fun gl -> let lfun = [tacarg_id, val_interp ist gl gtac] in
   interp_tac_gen lfun [] ist.debug tacarg_expr gl *)
@@ -1080,42 +539,6 @@ let interp_refine ist gl rc =
 
 let pf_match = pf_apply (fun e s c t -> understand_tcc e s ~expected_type:t c)
 
-(* Estimate a bound on the number of arguments of a raw constr. *)
-(* This is not perfect, because the unifier may fail to         *)
-(* typecheck the partial application, so we use a minimum of 5. *)
-(* Also, we don't handle delayed or iterated coercions to       *)
-(* FUNCLASS, which is probably just as well since these can     *)
-(* lead to infinite arities.                                    *)
-
-let splay_open_constr gl (sigma, c) =
-  let env = pf_env gl in let t = Retyping.get_type_of env sigma c in
-  Reductionops.splay_prod env sigma t
-
-let nbargs_open_constr gl oc =
-  let pl, _ = splay_open_constr gl oc in List.length pl
-
-let interp_nbargs ist gl rc =
-  try
-    let rc6 = mkRApp rc (mkRHoles 6) in
-    let sigma, t = interp_open_constr ist gl (rc6, None) in
-    let si = sig_it gl in
-    let gl = re_sig si sigma in
-    6 + nbargs_open_constr gl t
-  with _ -> 5
-
-let pf_nbargs gl c = nbargs_open_constr gl (project gl, c)
-
-let isAppInd gl c =
-  try ignore (pf_reduce_to_atomic_ind gl c); true with _ -> false
-
-let interp_view_nbimps ist gl rc =
-  try
-    let sigma, t = interp_open_constr ist gl (rc, None) in
-    let si = sig_it gl in
-    let gl = re_sig si sigma in
-    let pl, c = splay_open_constr gl t in
-    if isAppInd gl c then List.length pl else (-(List.length pl))
-  with _ -> 0
 
 (* }}} *)
 
@@ -1144,20 +567,6 @@ END
 (* to allow for user extensions. "ssrautoprop" defaults to   *)
 (* trivial.                                                  *)
 
-let ssr_n_tac seed n gl =
-  let name = if n = -1 then seed else ("ssr" ^ seed ^ string_of_int n) in
-  let fail msg = Feedback.msg_error (str msg); CErrors.error msg in
-  let tacname = 
-    try Nametab.locate_tactic (qualid_of_ident (id_of_string name))
-    with Not_found -> try Nametab.locate_tactic (ssrqid name)
-    with Not_found ->
-      if n = -1 then fail "The ssreflect library was not loaded"
-      else fail ("The tactic "^name^" was not found") in
-  let tacexpr = dummy_loc, Tacexpr.Reference (ArgArg (dummy_loc, tacname)) in
-  Proofview.V82.of_tactic (eval_tactic (Tacexpr.TacArg tacexpr)) gl
-
-let donetac n gl = ssr_n_tac "done" n gl
-
 let ssrautoprop gl =
   try 
     let tacname = 
@@ -1178,75 +587,6 @@ let tclBY tac = tclTHEN tac (donetac ~-1)
 (* and subgoal reordering tacticals (; first & ; last), respectively.        *)
 
 (* Force use of the tactic_expr parsing entry, to rule out tick marks. *)
-let pr_ssrtacarg _ _ prt = prt tacltop
-ARGUMENT EXTEND ssrtacarg TYPED AS tactic PRINTED BY pr_ssrtacarg
-| [ "YouShouldNotTypeThis" ] -> [ anomaly "Grammar placeholder match" ]
-END
-GEXTEND Gram
-  GLOBAL: ssrtacarg;
-  ssrtacarg: [[ tac = tactic_expr LEVEL "5" -> tac ]];
-END
-
-(* Lexically closed tactic for tacticals. *)
-let pr_ssrtclarg _ _ prt tac = prt tacltop tac
-ARGUMENT EXTEND ssrtclarg TYPED AS ssrtacarg
-    PRINTED BY pr_ssrtclarg
-| [ ssrtacarg(tac) ] -> [ tac ]
-END
-let eval_tclarg ist tac = ssrevaltac ist tac
-
-let pr_ortacs prt = 
-  let rec pr_rec = function
-  | [None]           -> spc() ++ str "|" ++ spc()
-  | None :: tacs     -> spc() ++ str "|" ++ pr_rec tacs
-  | Some tac :: tacs -> spc() ++ str "| " ++ prt tacltop tac ++  pr_rec tacs
-  | []                -> mt() in
-  function
-  | [None]           -> spc()
-  | None :: tacs     -> pr_rec tacs
-  | Some tac :: tacs -> prt tacltop tac ++ pr_rec tacs
-  | []                -> mt()
-let pr_ssrortacs _ _ = pr_ortacs
-
-ARGUMENT EXTEND ssrortacs TYPED AS tactic option list PRINTED BY pr_ssrortacs
-| [ ssrtacarg(tac) "|" ssrortacs(tacs) ] -> [ Some tac :: tacs ]
-| [ ssrtacarg(tac) "|" ] -> [ [Some tac; None] ]
-| [ ssrtacarg(tac) ] -> [ [Some tac] ]
-| [ "|" ssrortacs(tacs) ] -> [ None :: tacs ]
-| [ "|" ] -> [ [None; None] ]
-END
-
-let pr_hintarg prt = function
-  | true, tacs -> hv 0 (str "[ " ++ pr_ortacs prt tacs ++ str " ]")
-  | false, [Some tac] -> prt tacltop tac
-  | _, _ -> mt()
-
-let pr_ssrhintarg _ _ = pr_hintarg
-
-let mk_hint tac = false, [Some tac]
-let mk_orhint tacs = true, tacs
-let nullhint = true, []
-let nohint = false, []
-
-ARGUMENT EXTEND ssrhintarg TYPED AS bool * ssrortacs PRINTED BY pr_ssrhintarg
-| [ "[" "]" ] -> [ nullhint ]
-| [ "[" ssrortacs(tacs) "]" ] -> [ mk_orhint tacs ]
-| [ ssrtacarg(arg) ] -> [ mk_hint arg ]
-END
-
-ARGUMENT EXTEND ssrortacarg TYPED AS ssrhintarg PRINTED BY pr_ssrhintarg
-| [ "[" ssrortacs(tacs) "]" ] -> [ mk_orhint tacs ]
-END
-
-let hinttac ist is_by (is_or, atacs) =
-  let dtac = if is_by then donetac ~-1 else tclIDTAC in
-  let mktac = function
-  | Some atac -> tclTHEN (ssrevaltac ist atac) dtac
-  | _ -> dtac in
-  match List.map mktac atacs with
-  | [] -> if is_or then dtac else tclIDTAC
-  | [tac] -> tac
-  | tacs -> tclFIRST tacs
 
 (** The "-"/"+"/"*" tacticals.              USELESS SINCE COQ HAS NATIVE BULLETS
 
@@ -1287,18 +627,14 @@ END
 
 ** The "by" tactical. *)
 
-let pr_hint prt arg =
-  if arg = nohint then mt() else str "by " ++ pr_hintarg prt arg
-let pr_ssrhint _ _ = pr_hint
 
-ARGUMENT EXTEND ssrhint TYPED AS ssrhintarg PRINTED BY pr_ssrhint
-| [ ]                       -> [ nohint ]
-END
+open Ssrfwd
 
 TACTIC EXTEND ssrtclby
 | [ "by" ssrhintarg(tac) ] -> [ Proofview.V82.tactic (hinttac ist true tac) ]
 END
 
+(* }}} *)
 (* We can't parse "by" in ARGUMENT EXTEND because it will only be made *)
 (* into a keyword in ssreflect.v; so we anticipate this in GEXTEND.    *)
 
@@ -1306,7 +642,6 @@ GEXTEND Gram
   GLOBAL: ssrhint simple_tactic;
   ssrhint: [[ "by"; arg = ssrhintarg -> arg ]];
 END
-(* }}} *)
 
 (** The "in" pseudo-tactical {{{ **********************************************)
 
@@ -1327,71 +662,7 @@ let cleartac clr = check_hyps_uniq [] clr; Proofview.V82.of_tactic (clear (hyps_
 
 (* type ssrwgen = ssrclear * ssrhyp * string *)
 
-let pr_wgen = function 
-  | (clr, Some((id,k),None)) -> spc() ++ pr_clear mt clr ++ str k ++ pr_hoi id
-  | (clr, Some((id,k),Some p)) ->
-      spc() ++ pr_clear mt clr ++ str"(" ++ str k ++ pr_hoi id ++ str ":=" ++
-        pr_cpattern p ++ str ")"
-  | (clr, None) -> spc () ++ pr_clear mt clr
-let pr_ssrwgen _ _ _ = pr_wgen
 
-(* no globwith for char *)
-ARGUMENT EXTEND ssrwgen
-  TYPED AS ssrclear * ((ssrhoi_hyp * string) * cpattern option) option
-  PRINTED BY pr_ssrwgen
-| [ ssrclear_ne(clr) ] -> [ clr, None ]
-| [ ssrhoi_hyp(hyp) ] -> [ [], Some((hyp, " "), None) ]
-| [ "@" ssrhoi_hyp(hyp) ] -> [ [], Some((hyp, "@"), None) ]
-| [ "(" ssrhoi_id(id) ":=" lcpattern(p) ")" ] ->
-  [ [], Some ((id," "),Some p) ]
-| [ "(" ssrhoi_id(id) ")" ] -> [ [], Some ((id,"("), None) ]
-| [ "(@" ssrhoi_id(id) ":=" lcpattern(p) ")" ] ->
-  [ [], Some ((id,"@"),Some p) ]
-| [ "(" "@" ssrhoi_id(id) ":=" lcpattern(p) ")" ] ->
-  [ [], Some ((id,"@"),Some p) ]
-END
-
-type ssrclseq = InGoal | InHyps
- | InHypsGoal | InHypsSeqGoal | InSeqGoal | InHypsSeq | InAll | InAllHyps
-
-let pr_clseq = function
-  | InGoal | InHyps -> mt ()
-  | InSeqGoal       -> str "|- *"
-  | InHypsSeqGoal   -> str " |- *"
-  | InHypsGoal      -> str " *"
-  | InAll           -> str "*"
-  | InHypsSeq       -> str " |-"
-  | InAllHyps       -> str "* |-"
-
-let wit_ssrclseq = add_genarg "ssrclseq" pr_clseq
-let pr_clausehyps = pr_list pr_spc pr_wgen
-let pr_ssrclausehyps _ _ _ = pr_clausehyps
-
-ARGUMENT EXTEND ssrclausehyps 
-TYPED AS ssrwgen list PRINTED BY pr_ssrclausehyps
-| [ ssrwgen(hyp) "," ssrclausehyps(hyps) ] -> [ hyp :: hyps ]
-| [ ssrwgen(hyp) ssrclausehyps(hyps) ] -> [ hyp :: hyps ]
-| [ ssrwgen(hyp) ] -> [ [hyp] ]
-END
-
-(* type ssrclauses = ssrahyps * ssrclseq *)
-
-let pr_clauses (hyps, clseq) = 
-  if clseq = InGoal then mt ()
-  else str "in " ++ pr_clausehyps hyps ++ pr_clseq clseq
-let pr_ssrclauses _ _ _ = pr_clauses
-
-ARGUMENT EXTEND ssrclauses TYPED AS ssrwgen list * ssrclseq
-    PRINTED BY pr_ssrclauses
-  | [ "in" ssrclausehyps(hyps) "|-" "*" ] -> [ hyps, InHypsSeqGoal ]
-  | [ "in" ssrclausehyps(hyps) "|-" ]     -> [ hyps, InHypsSeq ]
-  | [ "in" ssrclausehyps(hyps) "*" ]      -> [ hyps, InHypsGoal ]
-  | [ "in" ssrclausehyps(hyps) ]          -> [ hyps, InHyps ]
-  | [ "in" "|-" "*" ]                     -> [ [], InSeqGoal ]
-  | [ "in" "*" ]                          -> [ [], InAll ]
-  | [ "in" "*" "|-" ]                     -> [ [], InAllHyps ]
-  | [ ]                                   -> [ [], InGoal ]
-END
 
 let nohide = mkRel 0
 let hidden_goal_tag = "the_hidden_goal"
@@ -1439,14 +710,6 @@ let hidetacs clseq idhide cl0 =
   if not (hidden_clseq clseq) then  [] else
   [posetac idhide cl0;
    Proofview.V82.of_tactic (convert_concl_no_check (mkVar idhide))]
-
-let discharge_hyp (id', (id, mode)) gl =
-  let cl' = subst_var id (pf_concl gl) in
-  match pf_get_hyp gl id, mode with
-  | NamedDecl.LocalAssum (_, t), _ | NamedDecl.LocalDef (_, _, t), "(" ->
-     apply_type (mkProd (Name id', t, cl')) [mkVar id] gl
-  | NamedDecl.LocalDef (_, v, t), _ ->
-     Proofview.V82.of_tactic (convert_concl (mkLetIn (Name id', v, t, cl'))) gl
 
 let endclausestac id_map clseq gl_id cl0 gl =
   let not_hyp' id = not (List.mem_assoc id id_map) in
@@ -1579,534 +842,10 @@ let simpltac = function
   | Cut n -> tclTRY (donetac n)
   | SimplCut (n,m) -> tclTHEN (safe_simpltac m) (tclTRY (donetac n))
   | Nop -> tclIDTAC
+let () = Hook.set Ssrcommon.simpl simpltac
 
-let pf_mkprod gl c ?(name=constr_name c) cl =
-  let gl, t = pf_type_of gl c in
-  if name <> Anonymous || noccurn 1 cl then gl, mkProd (name, t, cl) else
-  gl, mkProd (Name (pf_type_id gl t), t, cl)
-
-let pf_abs_prod name gl c cl = pf_mkprod gl c ~name (subst_term c cl)
-
-(** Extended intro patterns {{{ ***********************************************)
-
-(* There are two ways of "applying" a view to term:            *)
-(*  1- using a view hint if the view is an instance of some    *)
-(*     (reflection) inductive predicate.                       *)
-(*  2- applying the view if it coerces to a function, adding   *)
-(*     implicit arguments.                                     *)
-(* They require guessing the view hints and the number of      *)
-(* implicits, respectively, which we do by brute force.        *)
-
-let view_error s gv =
-  errorstrm (str ("Cannot " ^ s ^ " view ") ++ pr_term gv)
-
-let interp_view ist si env sigma gv v rid =
-  match v with
-  | GApp (loc, GHole _, rargs) ->
-    let rv = GApp (loc, rid, rargs) in
-    snd (interp_open_constr ist (re_sig si sigma) (rv, None))
-  | rv ->
-  let interp rc rargs =
-    interp_open_constr ist (re_sig si sigma) (mkRApp rc rargs, None) in
-  let rec simple_view rargs n =
-    if n < 0 then view_error "use" gv else
-    try interp rv rargs with _ -> simple_view (mkRHole :: rargs) (n - 1) in
-  let view_nbimps = interp_view_nbimps ist (re_sig si sigma) rv in
-  let view_args = [mkRApp rv (mkRHoles view_nbimps); rid] in
-  let rec view_with = function
-  | [] -> simple_view [rid] (interp_nbargs ist (re_sig si sigma) rv)
-  | hint :: hints -> try interp hint view_args with _ -> view_with hints in
-  snd (view_with (if view_nbimps < 0 then [] else Ssrvernac.viewtab.(0)))
-
-let top_id = mk_internal_id "top assumption"
-
-let tclEQINTROSviewtac_ref = ref (fun ~ist ~next -> assert false)
-
-let with_view ist ~next si env (gl0 : (Proof_type.goal * tac_ctx) Evd.sigma) c name cl prune (conclude : constr -> constr -> tac_ctx tac_a) clr =
-  let c2r ist x = { ist with lfun =
-    Id.Map.add top_id (Value.of_constr x) ist.lfun } in
-  let terminate (sigma, c') =
-    let sigma = Typeclasses.resolve_typeclasses ~fail:false env sigma in
-    let c' = Reductionops.nf_evar sigma c' in
-    let n, c', _, ucst = without_ctx pf_abs_evars gl0 (sigma, c') in
-    let c' = if not prune then c' else without_ctx pf_abs_cterm gl0 n c' in
-    let gl0 = pf_merge_uc ucst gl0 in
-    let gl0, ap =
-      let gl0, ctx = pull_ctx gl0 in
-      let gl0, ap = pf_abs_prod name gl0 c' (prod_applist cl [c]) in
-      push_ctx ctx gl0, ap in
-    let gl0 = pf_merge_uc_of sigma gl0 in
-    ap, c', gl0 in
-  let rec loop (sigma, c') = function
-  | [] ->
-      let ap, c', gl = terminate (sigma, c') in
-      ap, c', conclude ap c' gl
-  | f :: view ->
-      let ist, rid =
-        match kind_of_term c' with
-        | Var id -> ist,mkRVar id
-        | _ -> c2r ist c',mkRltacVar top_id in
-      let v = intern_term ist env f in
-      let tactic_view = mkSsrRef "tactic_view" in
-      match v with
-      | GApp (loc, GRef (_,box,None), [GHole (_,_,_, Some tac)])
-       when has_type tac (glbwit Tacarg.wit_tactic) &&
-            eq_gr box tactic_view -> begin
-        let tac = out_gen (glbwit Tacarg.wit_tactic) tac in
-        match tac with
-        | TacLetIn (false,binds,TacArg(l0,TacCall(l,k,args))) ->
-            let ap, c', gl = terminate (sigma, c') in
-            let wid, gl = with_ctx new_wild_id gl in
-            let argid = ArgVar(dummy_loc,wid) in
-            let tac =
-              TacLetIn (false,binds, 
-                TacArg(l0,TacCall(l,k,args @ [ Reference argid ]))) in
-            let tac = tac_ctx (ssrevaltac ist (Tacinterp.Value.of_closure ist tac)) in
-            let tac = tclTHENLIST_a [
-                tac_ctx (apply_type ap [c']);
-                tac_ctx (introid wid);
-                (!tclEQINTROSviewtac_ref ~ist ~next tac (tac_ctx tclIDTAC));
-                (tac_ctx (new_tac (clear (hyps_ids clr)))) ] in
-            let tac_check _ max gl =
-              if view <> [] then CErrors.error "No view can follow a tactic-view"
-              else tac_ctx tclIDTAC gl in
-            ap,c',tclTHEN_i_max tac tac_check gl
-        | _ -> CErrors.error "Only simple tactic call allowed as tactic-view" end
-      | _ -> loop (interp_view ist si env sigma f v rid) view
-  in loop
-
-let pfa_with_view ist ?(next=ref []) (prune, view) cl c conclude clr gl =
-  let env, sigma, si =
-    without_ctx pf_env gl, Refiner.project gl, without_ctx sig_it gl in
-  with_view
-    ist ~next si env gl c (constr_name c) cl prune conclude clr (sigma, c) view 
-
-let pf_with_view_linear ist gl v cl c =
-  let x,y,gl =
-    pfa_with_view ist v cl c (fun _ _ -> tac_ctx tclIDTAC) []
-      (push_ctx (new_ctx ()) gl) in
-  let gl, _ = pull_ctxs gl in
-  assert(List.length (sig_it gl) = 1);
-  x,y,re_sig (List.hd (sig_it gl)) (Refiner.project gl)
-
-let injecteq_id = mk_internal_id "injection equation"
-
-let pf_nb_prod gl = nb_prod (pf_concl gl)
-
-let rev_id = mk_internal_id "rev concl"
-
-let revtoptac n0 gl =
-  let n = pf_nb_prod gl - n0 in
-  let dc, cl = decompose_prod_n n (pf_concl gl) in
-  let dc' = dc @ [Name rev_id, compose_prod (List.rev dc) cl] in
-  let f = compose_lam dc' (mkEtaApp (mkRel (n + 1)) (-n) 1) in
-  refine (mkApp (f, [|Evarutil.mk_new_meta ()|])) gl
-
-let equality_inj l b id c gl =
-  let msg = ref "" in
-  try Proofview.V82.of_tactic (Equality.inj l b None c) gl
-  with
-    | Compat.Exc_located(_,CErrors.UserError (_,s))
-    | CErrors.UserError (_,s)
-  when msg := Pp.string_of_ppcmds s;
-       !msg = "Not a projectable equality but a discriminable one." ||
-       !msg = "Nothing to inject." ->
-    msg_warning (str !msg);
-    discharge_hyp (id, (id, "")) gl
-
-let injectidl2rtac id c gl =
-  tclTHEN (equality_inj None true id c) (revtoptac (pf_nb_prod gl)) gl
-
-let injectl2rtac c = match kind_of_term c with
-| Var id -> injectidl2rtac id (mkVar id, NoBindings)
-| _ ->
-  let id = injecteq_id in
-  tclTHENLIST [havetac id c; injectidl2rtac id (mkVar id, NoBindings); Proofview.V82.of_tactic (clear [id])]
-
-let is_injection_case c gl =
-  let gl, cty = pf_type_of gl c in
-  let (mind,_), _ = pf_reduce_to_quantified_ind gl cty in
-  eq_gr (IndRef mind) (build_coq_eq ())
-
-let perform_injection c gl =
-  let gl, cty = pf_type_of gl c in
-  let mind, t = pf_reduce_to_quantified_ind gl cty in
-  let dc, eqt = decompose_prod t in
-  if dc = [] then injectl2rtac c gl else
-  if not (closed0 eqt) then
-    CErrors.error "can't decompose a quantified equality" else
-  let cl = pf_concl gl in let n = List.length dc in
-  let c_eq = mkEtaApp c n 2 in
-  let cl1 = mkLambda (Anonymous, mkArrow eqt cl, mkApp (mkRel 1, [|c_eq|])) in
-  let id = injecteq_id in
-  let id_with_ebind = (mkVar id, NoBindings) in
-  let injtac = tclTHEN (introid id) (injectidl2rtac id id_with_ebind) in 
-  tclTHENLAST (Proofview.V82.of_tactic (apply (compose_lam dc cl1))) injtac gl  
-let ssrscasetac ?ind force_inj c gl = 
-  if force_inj || is_injection_case c gl then perform_injection c gl
-  else simplest_newcase ?ind c gl 
-
-let intro_all gl =
-  let dc, _ = Term.decompose_prod_assum (pf_concl gl) in
-  tclTHENLIST (List.map anontac (List.rev dc)) gl
-
-let rec intro_anon gl =
-  try anontac (List.hd (fst (Term.decompose_prod_n_assum 1 (pf_concl gl)))) gl
-  with err0 -> try tclTHEN (Proofview.V82.of_tactic red_in_concl) intro_anon gl with _ -> raise err0
-  (* with _ -> CErrors.error "No product even after reduction" *)
-
-let rec fst_unused_prod red tac = PG.nf_enter { PG.enter = begin fun gl ->
-  let concl = PG.concl (PG.assume gl) in
-  match kind_of_term concl with
-  | Prod (id,_,tgt) | LetIn(id,_,_,tgt) ->
-      if noccurn 1 tgt then tac id
-      else TN.tclTHEN (old_tac intro_anon) (fst_unused_prod false tac)
-  | _ -> if red then TN.tclZEROMSG (str"No product even after head-reduction.")
-         else TN.tclTHEN hnf_in_concl (fst_unused_prod true tac)
-end };;
-
-let introid_fast orig name = 
-  fst_unused_prod false (fun id -> orig := id; old_tac (introid name))
-let intro_anon_fast = fst_unused_prod false (fun _ -> old_tac intro_anon)
-
-let intro_anon ?(speed=`Slow) () =
-  if speed = `Slow then intro_anon else new_tac intro_anon_fast
-
-let intro_anon_a gl =
-  tac_ctx (intro_anon ~speed:(snd (pull_ctx gl)).speed ()) gl
-
-(* we reduce head beta redexes *)
-let introid ?(speed=`Slow) ?(orig=ref Anonymous) name =
-  if speed = `Slow then introid ~orig name
-  else tclTHEN (fun gl ->
-   let g, env = pf_concl gl, pf_env gl in
-   match kind_of_term g with
-   | App (hd, _) when isLambda hd -> 
-     let g = CClosure.whd_val (betared env) (CClosure.inject g) in
-     new_tac (convert_concl_no_check g) gl
-   | _ -> tclIDTAC gl)
-  (new_tac (introid_fast orig name))
-;;
-
-let introid_a ?orig name gl =
-  tac_ctx (introid ~speed:(snd (pull_ctx gl)).speed ?orig name) gl
-
-let speed_to_next_NDP gl =
-  match (snd (pull_ctx gl)).speed with
-  | `Slow -> tac_ctx tclIDTAC gl
-  | `Fast ->
-       tac_ctx (new_tac (fst_unused_prod false (fun _ -> old_tac tclIDTAC))) gl
-
-let with_top tac gl =
-  let speed = (snd (pull_ctx gl)).speed in
-  tac_ctx
-    (tclTHENLIST [ introid ~speed top_id; tac (mkVar top_id); new_tac (clear [top_id])])
-    gl
-
-let tclTHENS_nonstrict tac tacl taclname gl =
-  let tacres = tac gl in
-  let n_gls = List.length (sig_it tacres) in
-  let n_tac = List.length tacl in
-  if n_gls = n_tac then tclTHENS_a (fun _ -> tacres) tacl gl else
-  if n_gls = 0 then tacres else
-  let pr_only n1 n2 = if n1 < n2 then str "only " else mt () in
-  let pr_nb n1 n2 name =
-    pr_only n1 n2 ++ int n1 ++ str (" " ^ String.plural n1 name) in
-  errorstrm (pr_nb n_tac n_gls taclname ++ spc ()
-             ++ str "for " ++ pr_nb n_gls n_tac "subgoal")
-
-let rec is_name_in_ipats name = function
-  | IpatSimpl(clr,_) :: tl -> 
-      List.exists (function SsrHyp(_,id) -> id = name) clr 
-      || is_name_in_ipats name tl
-  | IpatId id :: tl -> id = name || is_name_in_ipats name tl
-  | IpatCase(`Regular l) :: tl -> is_name_in_ipats name (List.flatten l @ tl)
-  | IpatCase(`Block _) :: _ -> true
-  | _ :: tl -> is_name_in_ipats name tl
-  | [] -> false
-
-let rec nat_of_n n =
-  if n = 0 then mkConstruct path_of_O
-  else mkApp (mkConstruct path_of_S, [|nat_of_n (n-1)|])
-
-let ssr_abstract_id = Summary.ref "~name:SSR:abstractid" 0
-
-let mk_abstract_id () = incr ssr_abstract_id; nat_of_n !ssr_abstract_id
-
-let ssrmkabs id gl =
-  let env, concl = pf_env gl, pf_concl gl in
-  let step = { run = begin fun sigma ->
-    let Sigma ((abstract_proof, abstract_ty), sigma, p) =
-      let Sigma ((ty, _), sigma, p1) =
-        Evarutil.new_type_evar env sigma Evd.univ_flexible_alg in
-      let Sigma (ablock, sigma, p2) = mkSsrConst "abstract_lock" env sigma in
-      let Sigma (lock, sigma, p3) = Evarutil.new_evar env sigma ablock in
-      let Sigma (abstract, sigma, p4) = mkSsrConst "abstract" env sigma in
-      let abstract_ty = mkApp(abstract, [|ty;mk_abstract_id ();lock|]) in
-      let Sigma (m, sigma, p5) = Evarutil.new_evar env sigma abstract_ty in
-      Sigma ((m, abstract_ty), sigma, p1 +> p2 +> p3 +> p4 +> p5) in
-    let sigma, kont =
-      let rd = RelDecl.LocalAssum (Name id, abstract_ty) in
-      let Sigma (ev, sigma, _) = Evarutil.new_evar (Environ.push_rel rd env) sigma concl in
-      let sigma = Sigma.to_evar_map sigma in
-      (sigma, ev)
-    in
-    pp(lazy(pr_constr concl));
-    let term = mkApp (mkLambda(Name id,abstract_ty,kont) ,[|abstract_proof|]) in
-    let sigma, _ = Typing.type_of env sigma term in
-    Sigma.Unsafe.of_pair (term, sigma)
-  end } in
-  Proofview.V82.of_tactic
-    (Proofview.tclTHEN
-      (Tactics.New.refine step)
-      (Proofview.tclFOCUS 1 3 Proofview.shelve)) gl
-
-let ssrmkabstac ids =
-  List.fold_right (fun id tac -> tclTHENFIRST (ssrmkabs id) tac) ids tclIDTAC
-
-(* introstac: for "move" and "clear", tclEQINTROS: for "case" and "elim" *)
-(* This block hides the spaghetti-code needed to implement the only two  *)
-(* tactics that should be used to process intro patters.                 *)
-(* The difficulty is that we don't want to always rename, but we can     *)
-(* compute needeed renamings only at runtime, so we theread a tree like  *)
-(* imperativestructure so that outer renamigs are inherited by inner     *)
-(* ipts and that the cler performed at the end of ipatstac clears hyps   *)
-(* eventually renamed at runtime.                                        *)
-
-let delayed_clear force rest clr gl = 
-  let gl, ctx = pull_ctx gl in
-  let hyps = pf_hyps gl in
-  let () = if not force then List.iter (check_hyp_exists hyps) clr in
-  if List.exists (fun x -> force || is_name_in_ipats (hyp_id x) rest) clr then
-    let ren_clr, ren = 
-      List.split (List.map (fun x ->
-        let x = hyp_id x in
-        let x' = mk_anon_id (string_of_id x) gl in
-        x', (x, x')) clr) in
-    let ctx = { ctx with delayed_clears = ren_clr @ ctx.delayed_clears } in
-    let gl = push_ctx ctx gl in
-    tac_ctx (Proofview.V82.of_tactic (rename_hyp ren)) gl 
-  else
-    let ctx = { ctx with delayed_clears = hyps_ids clr @ ctx.delayed_clears } in
-    let gl = push_ctx ctx gl in
-    tac_ctx tclIDTAC gl
-      
-
-type block_names = (int * Term.types array) option
-
-let (introstac : ?ist:Tacinterp.interp_sign -> ssripats -> Proof_type.tactic),
-    (tclEQINTROS : ?ind:block_names ref -> ?ist:Tacinterp.interp_sign ->
-                     Proof_type.tactic -> Proof_type.tactic -> ssripats ->
-                      Proof_type.tactic),
-    (tclEQINTROSviewtac : ist:Tacinterp.interp_sign -> next:ssripats ref ->
-                            tac_ctx tac_a -> tac_ctx tac_a -> tac_ctx tac_a)
-=
-
-  let rec ipattac ?ist ~next p : tac_ctx tac_a = fun gl ->
-    pp(lazy(str"ipattac: " ++ pr_ipat p));
-    match p with
-    | IpatSeed _ -> CErrors.anomaly(str"IpatSeed is to be used for parsing only")
-    | IpatWild ->
-        let id, gl = with_ctx new_wild_id gl in
-        introid_a id gl
-    | IpatTmpId ->
-        let (id, orig), gl = with_ctx new_tmp_id gl in
-        introid_a ~orig id gl
-    | IpatCase(`Regular iorpat) ->
-        tclIORPAT ?ist (with_top (ssrscasetac false)) iorpat gl
-    | IpatCase(`Block (before,(id_side),after)) ->
-        let ind = ref None in
-        tclTHEN_i_max
-          (with_top (ssrscasetac ~ind false))
-          (block_intro ?ist ~ind id_side
-            (List.map (ipatstac ?ist) before)
-            (List.map (ipatstac ?ist)  after)) gl
-    | IpatInj iorpat ->
-        tclIORPAT ?ist (with_top (ssrscasetac true)) iorpat gl
-    | IpatRw (occ, dir) ->
-        with_top (ipat_rewrite occ dir) gl
-    | IpatId id -> introid_a id gl
-    | IpatNewHidden idl -> tac_ctx (ssrmkabstac idl) gl
-    | IpatSimpl (clr, sim) ->
-        tclTHEN_a (delayed_clear false !next clr) (tac_ctx (simpltac sim)) gl
-    | IpatAll -> tac_ctx intro_all gl
-    | IpatAnon -> intro_anon_a gl
-    | IpatNoop -> tac_ctx tclIDTAC gl
-    | IpatFastMode ->
-        let gl, ctx = pull_ctx gl in
-        let gl = push_ctx { ctx with speed = `Fast } gl in
-        tac_ctx tclIDTAC gl
-    | IpatView v ->
-        let ist =
-          match ist with Some x -> x | _ -> anomaly "ipat: view with no ist" in
-        let next_keeps =
-          match !next with (IpatCase _ | IpatRw _)::_ -> false | _ -> true in
-        let top_id = ref top_id in
-        tclTHENLIST_a [
-          speed_to_next_NDP;
-          (move_top_with_view ~next next_keeps top_id (next_keeps,v) ist);
-          (fun gl ->
-             let hyps = without_ctx pf_hyps gl in
-             if not next_keeps && test_hypname_exists hyps !top_id then
-               delayed_clear true !next [SsrHyp (dummy_loc,!top_id)] gl
-             else tac_ctx tclIDTAC gl)]
-        gl
-             
-  and block_intro ?ist ~ind prefix_side before after nth max gl =
-    let nparams, ktypes =
-      match !ind with
-      | Some x -> x
-      | None -> CErrors.anomaly (str "block_intro with no ind info") in
-    let n_before = List.length before in
-    let n_after = List.length after in
-    let n_ks = Array.length ktypes in
-    if max <> n_before + n_after + n_ks then
-      let n_gls = max in
-      let pr_only n1 n2 = if n1 < n2 then str "only " else mt () in
-      let pr_nb n1 n2 name =
-        pr_only n1 n2 ++ int n1 ++ str (" "^String.plural n1 name) in
-      errorstrm (pr_nb (n_before + n_ks + n_after) n_gls "intro pattern"
-        ++ spc () ++ str "for "
-        ++ pr_nb n_gls (n_before + n_ks + n_after) "subgoal")
-    else
-    let ipat_of_name name =
-      match prefix_side, name with
-      | `Anon, _ -> IpatAnon
-      | `Wild, _ -> IpatWild
-      | _, Anonymous -> IpatAnon
-      | `Id(prefix,side), Name id ->
-          let id = Id.to_string id in
-          match side with
-          | `Pre -> IpatId (Id.of_string (Id.to_string prefix ^ id))
-          | `Post -> IpatId (Id.of_string (id ^ Id.to_string prefix)) in
-    let rec ipat_of_ty n t =
-      match kind_of_type t with
-      | CastType(t,_) ->  ipat_of_ty n t
-      | ProdType(name,_,tgt) | LetInType(name,_,_,tgt) ->
-          (if n<= 0 then [ipat_of_name name] else []) @
-          ipat_of_ty (n-1) tgt
-      | AtomicType _ | SortType _ -> [] in
-    if nth <= n_before then
-      List.nth before (nth-1) gl
-    else if nth > n_before && nth <= n_before + n_ks then
-      let ktype = ktypes.(nth - 1 - n_before) in
-      let ipats = ipat_of_ty nparams ktype in
-      pp(lazy(str"=> "++pr_ipats ipats++str" on "++
-        pr_constr (without_ctx pf_concl gl)));
-      let gl = let gl,ctx = pull_ctx gl in push_ctx {ctx with speed=`Slow} gl in
-      ipatstac ?ist ipats gl
-    else
-      List.nth after (nth - 1 - n_before - n_ks) gl
-
-  and tclIORPAT ?ist tac = function
-  | [[]] -> tac
-  | orp -> tclTHENS_nonstrict tac (List.map (ipatstac ?ist) orp) "intro pattern"
-
-  and ipatstac ?ist ipats gl =
-    let rec aux ipats gl =
-      match ipats with
-      | [] -> tac_ctx tclIDTAC gl
-      | p :: ps ->
-          let next = ref ps in
-          let gl = ipattac ?ist ~next p gl in
-          tac_on_all gl (aux !next)
-    in
-      aux ipats gl
-  in
-
-  let rec split_itacs ?ist ~ind tac' = function
-    | (IpatSimpl _ as spat) :: ipats' -> (* FIXME block *)
-        let tac = ipattac ?ist ~next:(ref ipats') spat in
-        split_itacs ?ist ~ind (tclTHEN_a tac' tac) ipats'
-    | IpatCase (`Regular iorpat) :: ipats' -> 
-        tclIORPAT ?ist tac' iorpat, ipats'
-    | IpatCase (`Block(before,id_side,after)) :: ipats' ->
-        tclTHEN_i_max tac'
-          (block_intro ?ist ~ind id_side
-            (List.map (ipatstac ?ist) before)
-            (List.map (ipatstac ?ist)  after)),
-        ipats'
-    | ipats' -> tac', ipats' in
-
-  let combine_tacs tac eqtac ipats ?ist ~ind gl =
-    let tac1, ipats' = split_itacs ?ist ~ind tac ipats in
-    let tac2 = ipatstac ?ist ipats' in
-    tclTHENLIST_a [ tac1; eqtac; tac2 ] gl in
- 
-  (* Exported code *) 
-  let introstac ?ist ipats gl =
-    with_fresh_ctx (tclTHENLIST_a [
-      ipatstac ?ist ipats;
-      gen_tmp_ids ?ist;
-      clear_wilds_and_tmp_and_delayed_ids
-    ]) gl in
-  
-  let tclEQINTROS ?(ind=ref None) ?ist tac eqtac ipats gl =
-    with_fresh_ctx (tclTHENLIST_a [
-      combine_tacs (tac_ctx tac) (tac_ctx eqtac) ipats ?ist ~ind;
-      gen_tmp_ids ?ist;
-      clear_wilds_and_tmp_and_delayed_ids;
-    ]) gl in
-
-  let tclEQINTROSviewtac ~ist ~next tac eqtac gl =
-    let tac1, ipats' = (* TODO: pass ind via lets in concl *)
-      split_itacs ~ist ~ind:(ref None) tac !next in
-    next := ipats';
-    tclTHENLIST_a [ tac1; eqtac ] gl in (* FIXME *)
-
-  introstac, tclEQINTROS, tclEQINTROSviewtac
-;;
-
-let () = tclEQINTROSviewtac_ref := tclEQINTROSviewtac
-
-let rec eqmoveipats eqpat = function
-  | (IpatSimpl _ as ipat) :: ipats -> ipat :: eqmoveipats eqpat ipats
-  | (IpatAll :: _ | []) as ipats -> IpatAnon :: eqpat :: ipats
-   | ipat :: ipats -> ipat :: eqpat :: ipats
-
-(* General case *)
-let tclINTROS ist t ip = tclEQINTROS ~ist (t ist) tclIDTAC ip
-
-(** The "=>" tactical *)
-
-let ssrintros_sep =
-  let atom_sep = function
-    (* | TacSplit (_, [NoBindings]) -> mt *)
-    (* | TacExtend (_, "ssrapply", []) -> mt *)
-    | _ -> spc in
-  function
-    | TacId [] -> mt
-    | TacArg (_, Tacexp _) -> mt
-    | TacArg (_, Reference _) -> mt
-    | TacAtom (_, atom) -> atom_sep atom
-    | _ -> spc
-
-let pr_ssrintrosarg _ _ prt (tac, ipats) =
-  prt tacltop tac ++ pr_intros spc ipats
-
-ARGUMENT EXTEND ssrintrosarg TYPED AS tactic * ssrintros
-   PRINTED BY pr_ssrintrosarg
-| [ "YouShouldNotTypeThis" ssrtacarg(arg) ssrintros_ne(ipats) ] -> [ arg, ipats ]
-END
-
-TACTIC EXTEND ssrtclintros
-| [ "YouShouldNotTypeThis" ssrintrosarg(arg) ] ->
-  [ let tac, intros = arg in
-    Proofview.V82.tactic (tclINTROS ist (fun ist -> ssrevaltac ist tac) intros) ]
-END
-set_pr_ssrtac "tclintros" 0 [ArgSsr "introsarg"]
-
-let tclintros_expr loc tac ipats =
-  let args = [Tacexpr.TacGeneric (in_gen (rawwit wit_ssrintrosarg) (tac, ipats))] in
-  ssrtac_expr loc "tclintros" args
-
-GEXTEND Gram
-  GLOBAL: tactic_expr;
-  tactic_expr: LEVEL "1" [ RIGHTA
-    [ tac = tactic_expr; intros = ssrintros_ne -> tclintros_expr !@loc tac intros
-    ] ];
-END
-(* }}} *)
+open Ssripats
+open Ssrview
 
 (** Multipliers {{{ ***********************************************************)
 
@@ -2151,15 +890,6 @@ let tclMULT = function
 type ssrdoarg = ((ssrindex * ssrmmod) * ssrhint) * ssrclauses
 *)
 
-let pr_ssrdoarg prc _ prt (((n, m), tac), clauses) =
-  pr_index n ++ pr_mmod m ++ pr_hintarg prt tac ++ pr_clauses clauses
-
-ARGUMENT EXTEND ssrdoarg
-  TYPED AS ((ssrindex * ssrmmod) * ssrhintarg) * ssrclauses
-  PRINTED BY pr_ssrdoarg
-| [ "YouShouldNotTypeThis" ] -> [ anomaly "Grammar placeholder match" ]
-END
-
 let ssrdotac ist (((n, m), tac), clauses) =
   let mul = get_index n, m in
   tclCLAUSES ist (tclMULT mul (hinttac ist false tac)) clauses
@@ -2193,61 +923,6 @@ END
 
 (** The "first" and "last" tacticals. {{{ *************************************)
 
-(* type ssrseqarg = ssrindex * (ssrtacarg * ssrtac option) *)
-
-let pr_seqtacarg prt = function
-  | (is_first, []), _ -> str (if is_first then "first" else "last")
-  | tac, Some dtac ->
-    hv 0 (pr_hintarg prt tac ++ spc() ++ str "|| " ++ prt tacltop dtac)
-  | tac, _ -> pr_hintarg prt tac
-
-let pr_ssrseqarg _ _ prt = function
-  | ArgArg 0, tac -> pr_seqtacarg prt tac
-  | i, tac -> pr_index i ++ str " " ++ pr_seqtacarg prt tac
-
-(* We must parse the index separately to resolve the conflict with *)
-(* an unindexed tactic.                                            *)
-ARGUMENT EXTEND ssrseqarg TYPED AS ssrindex * (ssrhintarg * tactic option)
-                          PRINTED BY pr_ssrseqarg
-| [ "YouShouldNotTypeThis" ] -> [ anomaly "Grammar placeholder match" ]
-END
-
-let sq_brace_tacnames =
-   ["first"; "solve"; "do"; "rewrite"; "have"; "suffices"; "wlog"]
-   (* "by" is a keyword *)
-let accept_ssrseqvar strm =
-  match Compat.get_tok (stream_nth 0 strm) with
-  | Tok.IDENT id when not (List.mem id sq_brace_tacnames) ->
-     accept_before_syms_or_ids ["["] ["first";"last"] strm
-  | _ -> raise Stream.Failure
-
-let test_ssrseqvar = Gram.Entry.of_parser "test_ssrseqvar" accept_ssrseqvar
-
-let swaptacarg (loc, b) = (b, []), Some (TacId [])
-
-let check_seqtacarg dir arg = match snd arg, dir with
-  | ((true, []), Some (TacAtom (loc, _))), L2R ->
-    loc_error loc (str "expected \"last\"")
-  | ((false, []), Some (TacAtom (loc, _))), R2L ->
-    loc_error loc (str "expected \"first\"")
-  | _, _ -> arg
-
-let ssrorelse = Gram.entry_create "ssrorelse"
-GEXTEND Gram
-  GLOBAL: ssrorelse ssrseqarg;
-  ssrseqidx: [
-    [ test_ssrseqvar; id = Prim.ident -> ArgVar (!@loc, id)
-    | n = Prim.natural -> ArgArg (check_index !@loc n)
-    ] ];
-  ssrswap: [[ IDENT "first" -> !@loc, true | IDENT "last" -> !@loc, false ]];
-  ssrorelse: [[ "||"; tac = tactic_expr LEVEL "2" -> tac ]];
-  ssrseqarg: [
-    [ arg = ssrswap -> noindex, swaptacarg arg
-    | i = ssrseqidx; tac = ssrortacarg; def = OPT ssrorelse -> i, (tac, def)
-    | i = ssrseqidx; arg = ssrswap -> i, swaptacarg arg
-    | tac = tactic_expr LEVEL "3" -> noindex, (mk_hint tac, None)
-    ] ];
-END
 
 let tclPERM perm tac gls =
   let subgls = tac gls in
@@ -2365,54 +1040,6 @@ END
 (* post-interpretation of terms *)
 let all_ok _ _ = true
 
-let pf_abs_ssrterm ?(resolve_typeclasses=false) ist gl t =
-  let sigma, ct as t = interp_term ist gl t in
-  let sigma, _ as t =
-    let env = pf_env gl in
-    if not resolve_typeclasses then t
-    else
-       let sigma = Typeclasses.resolve_typeclasses ~fail:false env sigma in
-       sigma, Evarutil.nf_evar sigma ct in
-  let n, c, abstracted_away, ucst = pf_abs_evars gl t in
-  List.fold_left Evd.remove sigma abstracted_away, pf_abs_cterm gl n c, ucst, n
-
-let pf_interp_ty ?(resolve_typeclasses=false) ist gl ty =
-   let n_binders = ref 0 in
-   let ty = match ty with
-   | a, (t, None) ->
-     let rec force_type = function
-     | GProd (l, x, k, s, t) -> incr n_binders; GProd (l, x, k, s, force_type t)
-     | GLetIn (l, x, v, t) -> incr n_binders; GLetIn (l, x, v, force_type t)
-     | ty -> mkRCast ty mkRType in
-     a, (force_type t, None)
-   | _, (_, Some ty) ->
-     let rec force_type = function
-     | CProdN (l, abs, t) ->
-       n_binders := !n_binders +  List.length (List.flatten (List.map pi1 abs));
-       CProdN (l, abs, force_type t)
-     | CLetIn (l, n, v, t) -> incr n_binders; CLetIn (l, n, v, force_type t)
-     | ty -> mkCCast dummy_loc ty (mkCType dummy_loc) in
-     mk_term xNoFlag (force_type ty) in
-   let strip_cast (sigma, t) =
-     let rec aux t = match kind_of_type t with
-     | CastType (t, ty) when !n_binders = 0 && isSort ty -> t
-     | ProdType(n,s,t) -> decr n_binders; mkProd (n, s, aux t)
-     | LetInType(n,v,ty,t) -> decr n_binders; mkLetIn (n, v, ty, aux t)
-     | _ -> anomaly "pf_interp_ty: ssr Type cast deleted by typecheck" in
-     sigma, aux t in
-   let sigma, cty as ty = strip_cast (interp_term ist gl ty) in
-   let ty =
-     let env = pf_env gl in
-     if not resolve_typeclasses then ty
-     else
-       let sigma = Typeclasses.resolve_typeclasses ~fail:false env sigma in
-       sigma, Evarutil.nf_evar sigma cty in
-   let n, c, _, ucst = pf_abs_evars gl ty in
-   let lam_c = pf_abs_cterm gl n c in
-   let ctx, c = decompose_lam_n n lam_c in
-   n, compose_prod ctx c, lam_c, ucst
-;;
-
 let whd_app f args = Reductionops.whd_betaiota Evd.empty (mkApp (f, args))
 
 let pr_cargs a =
@@ -2425,43 +1052,6 @@ let pp_concat hd ?(sep=str", ") = function [] -> hd | x :: xs ->
 
 let fake_pmatcher_end () =
   mkProp, L2R, (Evd.empty, Evd.empty_evar_universe_context, mkProp)
-
-(* TASSI: given (c : ty), generates (c ??? : ty[???/...]) with m evars *)
-exception NotEnoughProducts
-let prof_saturate_whd = mk_profiler "saturate.whd";;
-let saturate ?(beta=false) ?(bi_types=false) env sigma c ?(ty=Retyping.get_type_of env sigma c) m 
-=
-  let rec loop ty args sigma n = 
-  if n = 0 then 
-    let args = List.rev args in
-     (if beta then Reductionops.whd_beta sigma else fun x -> x)
-      (mkApp (c, Array.of_list (List.map snd args))), ty, args, sigma 
-  else match kind_of_type ty with
-  | ProdType (_, src, tgt) ->
-      let sigma = create_evar_defs sigma in
-      let sigma = Sigma.Unsafe.of_evar_map sigma in
-      let Sigma (x, sigma, _) =
-        Evarutil.new_evar env sigma
-          (if bi_types then Reductionops.nf_betaiota (Sigma.to_evar_map sigma) src else src) in
-      let sigma = Sigma.to_evar_map sigma in
-      loop (subst1 x tgt) ((m - n,x) :: args) sigma (n-1)
-  | CastType (t, _) -> loop t args sigma n 
-  | LetInType (_, v, _, t) -> loop (subst1 v t) args sigma n
-  | SortType _ -> assert false
-  | AtomicType _ ->
-      let ty = 
-        prof_saturate_whd.profile      
-        (Reductionops.whd_all env sigma) ty in
-      match kind_of_type ty with
-      | ProdType _ -> loop ty args sigma n
-      | _ -> raise NotEnoughProducts
-  in
-   loop ty [] sigma m
-
-let pf_saturate ?beta ?bi_types gl c ?ty m = 
-  let env, sigma, si = pf_env gl, project gl, sig_it gl in
-  let t, ty, args, sigma = saturate ?beta ?bi_types env sigma c ?ty m in
-  t, ty, args, re_sig si sigma 
 
 (** Rewrite redex switch *)
 
@@ -2551,7 +1141,7 @@ let gentac ist gen gl =
   then tclTHEN (Proofview.V82.of_tactic (convert_concl cl)) (cleartac clr) gl
   else genclrtac cl [c] clr gl
 
-let () = gentac_ref := gentac
+let () = Hook.set Ssrcommon.gen gentac
 
 let pf_interp_gen ist gl to_ind gen =
   let _, _, a, b, c, ucst,gl = pf_interp_gen_aux ist gl to_ind gen in
@@ -2639,6 +1229,8 @@ let with_dgens (gensl, clr) maintac ist = match gensl with
     tclTHEN (genstac (gens, clr) ist) (maintac deps gen ist)
   | [gen :: gens] -> tclTHEN (genstac (gens, clr) ist) (maintac [] gen ist)
   | _ -> with_defective maintac [] clr ist
+
+let () = Hook.set Ssrcommon.with_dgens_hook with_dgens
 
 let first_goal gls =
   let gl = gls.Evd.it and sig_0 = gls.Evd.sigma in
@@ -2827,6 +1419,11 @@ let movehnftac gl = match kind_of_term (pf_concl gl) with
   | Prod _ | LetIn _ -> tclIDTAC gl
   | _ -> new_tac hnf_in_concl gl
 
+let rec eqmoveipats eqpat = function
+  | (IpatSimpl _ as ipat) :: ipats -> ipat :: eqmoveipats eqpat ipats
+  | (IpatAll :: _ | []) as ipats -> IpatAnon :: eqpat :: ipats
+   | ipat :: ipats -> ipat :: eqpat :: ipats
+
 let ssrmovetac ist = function
   | _::_ as view, (_, (dgens, ipats)) ->
     let next = ref ipats in
@@ -2902,63 +1499,6 @@ let unprotecttac gl =
            CClosure.RedFlags.fFIX;
            CClosure.RedFlags.fCOFIX]), DEFAULTcast) hyploc))
     allHypsAndConcl gl
-
-let dependent_apply_error =
-  try CErrors.error "Could not fill dependent hole in \"apply\"" with err -> err
-
-(* TASSI: Sometimes Coq's apply fails. According to my experience it may be
- * related to goals that are products and with beta redexes. In that case it
- * guesses the wrong number of implicit arguments for your lemma. What follows
- * is just like apply, but with a user-provided number n of implicits.
- *
- * Refine.refine function that handles type classes and evars but fails to
- * handle "dependently typed higher order evars". 
- *
- * Refiner.refiner that does not handle metas with a non ground type but works
- * with dependently typed higher order metas. *)
-let applyn ~with_evars ?beta ?(with_shelve=false) n t gl =
-  if with_evars then
-    let refine gl =
-      let t, ty, args, gl = pf_saturate ?beta ~bi_types:true gl t n in
-(*       pp(lazy(str"sigma@saturate=" ++ pr_evar_map None (project gl))); *)
-      let gl = pf_unify_HO gl ty (pf_concl gl) in
-      let gs = CList.map_filter (fun (_, e) ->
-        if isEvar (pf_nf_evar gl e) then Some e else None)
-        args in
-      pf_partial_solution gl t gs
-    in
-    Proofview.(V82.of_tactic
-      (tclTHEN (V82.tactic refine)
-        (if with_shelve then shelve_unifiable else tclUNIT ()))) gl
-  else
-    let t, gl = if n = 0 then t, gl else
-      let sigma, si = project gl, sig_it gl in
-      let rec loop sigma bo args = function (* saturate with metas *)
-        | 0 -> mkApp (t, Array.of_list (List.rev args)), re_sig si sigma 
-        | n -> match kind_of_term bo with
-          | Lambda (_, ty, bo) -> 
-              if not (closed0 ty) then raise dependent_apply_error;
-              let m = Evarutil.new_meta () in
-              loop (meta_declare m ty sigma) bo ((mkMeta m)::args) (n-1)
-          | _ -> assert false
-      in loop sigma t [] n in
-    pp(lazy(str"Refiner.refiner " ++ pr_constr t));
-    Refiner.refiner (Proof_type.Refine t) gl
-
-let refine_with ?(first_goes_last=false) ?beta ?(with_evars=true) oc gl =
-  let rec mkRels = function 1 -> [] | n -> mkRel n :: mkRels (n-1) in
-  let uct = Evd.evar_universe_context (fst oc) in
-  let n, oc = pf_abs_evars_pirrel gl oc in
-  let gl = pf_unsafe_merge_uc uct gl in
-  let oc = if not first_goes_last || n <= 1 then oc else
-    let l, c = decompose_lam oc in
-    if not (List.for_all_i (fun i (_,t) -> closedn ~-i t) (1-n) l) then oc else
-    compose_lam (let xs,y = List.chop (n-1) l in y @ xs) 
-      (mkApp (compose_lam l c, Array.of_list (mkRel 1 :: mkRels n)))
-  in
-  pp(lazy(str"after: " ++ pr_constr oc));
-  try applyn ~with_evars ~with_shelve:true ?beta n oc gl
-  with e when CErrors.noncritical e -> raise dependent_apply_error
 
 let pf_fresh_inductive_instance ind gl =
   let sigma, env, it = project gl, pf_env gl, sig_it gl in
@@ -3328,6 +1868,67 @@ let ssrelim ?(ind=ref None) ?(is_case=false) ?ist deps what ?elim eqid ipats gl 
 let simplest_newelim x= ssrelim ~is_case:false [] (`EConstr ([],None,x)) None []
 let simplest_newcase ?ind x= ssrelim ?ind ~is_case:true [] (`EConstr ([],None,x)) None []
 let () = Hook.set Ssrcommon.simplest_newcase simplest_newcase
+
+let injecteq_id = mk_internal_id "injection equation"
+
+let pf_nb_prod gl = nb_prod (pf_concl gl)
+
+let rev_id = mk_internal_id "rev concl"
+
+let revtoptac n0 gl =
+  let n = pf_nb_prod gl - n0 in
+  let dc, cl = decompose_prod_n n (pf_concl gl) in
+  let dc' = dc @ [Name rev_id, compose_prod (List.rev dc) cl] in
+  let f = compose_lam dc' (mkEtaApp (mkRel (n + 1)) (-n) 1) in
+  refine (mkApp (f, [|Evarutil.mk_new_meta ()|])) gl
+
+let equality_inj l b id c gl =
+  let msg = ref "" in
+  try Proofview.V82.of_tactic (Equality.inj l b None c) gl
+  with
+    | Compat.Exc_located(_,CErrors.UserError (_,s))
+    | CErrors.UserError (_,s)
+  when msg := Pp.string_of_ppcmds s;
+       !msg = "Not a projectable equality but a discriminable one." ||
+       !msg = "Nothing to inject." ->
+    msg_warning (str !msg);
+    discharge_hyp (id, (id, "")) gl
+
+let injectidl2rtac id c gl =
+  tclTHEN (equality_inj None true id c) (revtoptac (pf_nb_prod gl)) gl
+
+let injectl2rtac c = match kind_of_term c with
+| Var id -> injectidl2rtac id (mkVar id, NoBindings)
+| _ ->
+  let id = injecteq_id in
+  let xhavetac id c = Proofview.V82.of_tactic (pose_proof (Name id) c) in
+  tclTHENLIST [xhavetac id c; injectidl2rtac id (mkVar id, NoBindings); Proofview.V82.of_tactic (clear [id])]
+
+
+let is_injection_case c gl =
+  let gl, cty = pf_type_of gl c in
+  let (mind,_), _ = pf_reduce_to_quantified_ind gl cty in
+  eq_gr (IndRef mind) (build_coq_eq ())
+
+let perform_injection c gl =
+  let gl, cty = pf_type_of gl c in
+  let mind, t = pf_reduce_to_quantified_ind gl cty in
+  let dc, eqt = decompose_prod t in
+  if dc = [] then injectl2rtac c gl else
+  if not (closed0 eqt) then
+    CErrors.error "can't decompose a quantified equality" else
+  let cl = pf_concl gl in let n = List.length dc in
+  let c_eq = mkEtaApp c n 2 in
+  let cl1 = mkLambda (Anonymous, mkArrow eqt cl, mkApp (mkRel 1, [|c_eq|])) in
+  let id = injecteq_id in
+  let id_with_ebind = (mkVar id, NoBindings) in
+  let injtac = tclTHEN (introid id) (injectidl2rtac id id_with_ebind) in 
+  tclTHENLAST (Proofview.V82.of_tactic (apply (compose_lam dc cl1))) injtac gl  
+let ssrscasetac ?ind force_inj c gl =
+  if force_inj || is_injection_case c gl then perform_injection c gl
+  else simplest_newcase ?ind c gl
+let () = Hook.set Ssrcommon.simplest_newcase_or_inj
+  (fun ?ind ~force_inj c gl -> ssrscasetac ?ind force_inj c gl)
 
 let check_casearg = function
 | view, (_, (([_; gen :: _], _), _)) when view <> [] && has_occ gen ->
@@ -4324,384 +2925,7 @@ END
 
 (** 8. Forward chaining tactics (pose, set, have, suffice, wlog) *)
 
-(** Defined identifier *)
 
-type ssrfwdid = identifier
-
-let pr_ssrfwdid _ _ _ id = pr_spc () ++ pr_id id
-
-(* We use a primitive parser for the head identifier of forward *)
-(* tactis to avoid syntactic conflicts with basic Coq tactics. *)
-ARGUMENT EXTEND ssrfwdid TYPED AS ident PRINTED BY pr_ssrfwdid
-  | [ "YouShouldNotTypeThis" ] -> [ anomaly "Grammar placeholder match" ]
-END
-
-let accept_ssrfwdid strm =
-  match Compat.get_tok (stream_nth 0 strm) with
-  | Tok.IDENT id -> accept_before_syms_or_any_id [":"; ":="; "("] strm
-  | _ -> raise Stream.Failure
-
-
-let test_ssrfwdid = Gram.Entry.of_parser "test_ssrfwdid" accept_ssrfwdid
-
-GEXTEND Gram
-  GLOBAL: ssrfwdid;
-  ssrfwdid: [[ test_ssrfwdid; id = Prim.ident -> id ]];
-  END
-
-
-
-(** Definition value formatting *)
-
-(* We use an intermediate structure to correctly render the binder list  *)
-(* abbreviations. We use a list of hints to extract the binders and      *)
-(* base term from a term, for the two first levels of representation of  *)
-(* of constr terms.                                                      *)
-
-type 'term ssrbind =
-  | Bvar of name
-  | Bdecl of name list * 'term
-  | Bdef of name * 'term option * 'term
-  | Bstruct of name
-  | Bcast of 'term
-
-let pr_binder prl = function
-  | Bvar x ->
-    pr_name x
-  | Bdecl (xs, t) ->
-    str "(" ++ pr_list pr_spc pr_name xs ++ str " : " ++ prl t ++ str ")"
-  | Bdef (x, None, v) ->
-    str "(" ++ pr_name x ++ str " := " ++ prl v ++ str ")"
-  | Bdef (x, Some t, v) ->
-    str "(" ++ pr_name x ++ str " : " ++ prl t ++
-                            str " := " ++ prl v ++ str ")"
-  | Bstruct x ->
-    str "{struct " ++ pr_name x ++ str "}"
-  | Bcast t ->
-    str ": " ++ prl t
-
-type 'term ssrbindval = 'term ssrbind list * 'term
-
-type ssrbindfmt =
-  | BFvar
-  | BFdecl of int        (* #xs *)
-  | BFcast               (* final cast *)
-  | BFdef of bool        (* has cast? *)
-  | BFrec of bool * bool (* has struct? * has cast? *)
-
-let rec mkBstruct i = function
-  | Bvar x :: b ->
-    if i = 0 then [Bstruct x] else mkBstruct (i - 1) b
-  | Bdecl (xs, _) :: b ->
-    let i' = i - List.length xs in
-    if i' < 0 then [Bstruct (List.nth xs i)] else mkBstruct i' b
-  | _ :: b -> mkBstruct i b
-  | [] -> []
-
-let rec format_local_binders h0 bl0 = match h0, bl0 with
-  | BFvar :: h, LocalRawAssum ([_, x], _,  _) :: bl ->
-    Bvar x :: format_local_binders h bl
-  | BFdecl _ :: h, LocalRawAssum (lxs, _, t) :: bl ->
-    Bdecl (List.map snd lxs, t) :: format_local_binders h bl
-  | BFdef false :: h, LocalRawDef ((_, x), v) :: bl ->
-    Bdef (x, None, v) :: format_local_binders h bl
-  | BFdef true :: h,
-      LocalRawDef ((_, x), CCast (_, v, CastConv t)) :: bl ->
-    Bdef (x, Some t, v) :: format_local_binders h bl
-  | _ -> []
-  
-let rec format_constr_expr h0 c0 = match h0, c0 with
-  | BFvar :: h, CLambdaN (_, [[_, x], _, _], c) ->
-    let bs, c' = format_constr_expr h c in
-    Bvar x :: bs, c'
-  | BFdecl _:: h, CLambdaN (_, [lxs, _, t], c) ->
-    let bs, c' = format_constr_expr h c in
-    Bdecl (List.map snd lxs, t) :: bs, c'
-  | BFdef false :: h, CLetIn(_, (_, x), v, c) ->
-    let bs, c' = format_constr_expr h c in
-    Bdef (x, None, v) :: bs, c'
-  | BFdef true :: h, CLetIn(_, (_, x), CCast (_, v, CastConv t), c) ->
-    let bs, c' = format_constr_expr h c in
-    Bdef (x, Some t, v) :: bs, c'
-  | [BFcast], CCast (_, c, CastConv t) ->
-    [Bcast t], c
-  | BFrec (has_str, has_cast) :: h, 
-    CFix (_, _, [_, (Some locn, CStructRec), bl, t, c]) ->
-    let bs = format_local_binders h bl in
-    let bstr = if has_str then [Bstruct (Name (snd locn))] else [] in
-    bs @ bstr @ (if has_cast then [Bcast t] else []), c 
-  | BFrec (_, has_cast) :: h, CCoFix (_, _, [_, bl, t, c]) ->
-    format_local_binders h bl @ (if has_cast then [Bcast t] else []), c
-  | _, c ->
-    [], c
-
-let rec format_glob_decl h0 d0 = match h0, d0 with
-  | BFvar :: h, (x, _, None, _) :: d ->
-    Bvar x :: format_glob_decl h d
-  | BFdecl 1 :: h,  (x, _, None, t) :: d ->
-    Bdecl ([x], t) :: format_glob_decl h d
-  | BFdecl n :: h, (x, _, None, t) :: d when n > 1 ->
-    begin match format_glob_decl (BFdecl (n - 1) :: h) d with
-    | Bdecl (xs, _) :: bs -> Bdecl (x :: xs, t) :: bs
-    | bs -> Bdecl ([x], t) :: bs
-    end
-  | BFdef false :: h, (x, _, Some v, _)  :: d ->
-    Bdef (x, None, v) :: format_glob_decl h d
-  | BFdef true:: h, (x, _, Some (GCast (_, v, CastConv t)), _) :: d ->
-    Bdef (x, Some t, v) :: format_glob_decl h d
-  | _, (x, _, None, t) :: d ->
-    Bdecl ([x], t) :: format_glob_decl [] d
-  | _, (x, _, Some v, _) :: d ->
-     Bdef (x, None, v) :: format_glob_decl [] d
-  | _, [] -> []
-
-let rec format_glob_constr h0 c0 = match h0, c0 with
-  | BFvar :: h, GLambda (_, x, _, _, c) ->
-    let bs, c' = format_glob_constr h c in
-    Bvar x :: bs, c'
-  | BFdecl 1 :: h,  GLambda (_, x, _, t, c) ->
-    let bs, c' = format_glob_constr h c in
-    Bdecl ([x], t) :: bs, c'
-  | BFdecl n :: h,  GLambda (_, x, _, t, c) when n > 1 ->
-    begin match format_glob_constr (BFdecl (n - 1) :: h) c with
-    | Bdecl (xs, _) :: bs, c' -> Bdecl (x :: xs, t) :: bs, c'
-    | _ -> [Bdecl ([x], t)], c
-    end
-  | BFdef false :: h, GLetIn(_, x, v, c) ->
-    let bs, c' = format_glob_constr h c in
-    Bdef (x, None, v) :: bs, c'
-  | BFdef true :: h, GLetIn(_, x, GCast (_, v, CastConv t), c) ->
-    let bs, c' = format_glob_constr h c in
-    Bdef (x, Some t, v) :: bs, c'
-  | [BFcast], GCast (_, c, CastConv t) ->
-    [Bcast t], c
-  | BFrec (has_str, has_cast) :: h, GRec (_, f, _, bl, t, c)
-      when Array.length c = 1 ->
-    let bs = format_glob_decl h bl.(0) in
-    let bstr = match has_str, f with
-    | true, GFix ([|Some i, GStructRec|], _) -> mkBstruct i bs
-    | _ -> [] in
-    bs @ bstr @ (if has_cast then [Bcast t.(0)] else []), c.(0)
-  | _, c ->
-    [], c
-
-(** Forward chaining argument *)
-
-(* There are three kinds of forward definitions:           *)
-(*   - Hint: type only, cast to Type, may have proof hint. *)
-(*   - Have: type option + value, no space before type     *)
-(*   - Pose: binders + value, space before binders.        *)
-
-type ssrfwdkind = FwdHint of string * bool | FwdHave | FwdPose
-
-type ssrfwdfmt = ssrfwdkind * ssrbindfmt list
-
-let pr_fwdkind = function
-  | FwdHint (s,_) -> str (s ^ " ") | _ -> str " :=" ++ spc ()
-let pr_fwdfmt (fk, _ : ssrfwdfmt) = pr_fwdkind fk
-
-let wit_ssrfwdfmt = add_genarg "ssrfwdfmt" pr_fwdfmt
-
-(* type ssrfwd = ssrfwdfmt * ssrterm *)
-
-let mkFwdVal fk c = ((fk, []), mk_term xNoFlag c)
-let mkssrFwdVal fk c = ((fk, []), (c,None))
-
-let mkFwdCast fk loc t c = ((fk, [BFcast]), mk_term xNoFlag (CCast (loc, c, dC t)))
-let mkssrFwdCast fk loc t c = ((fk, [BFcast]), (c, Some t))
-
-let mkFwdHint s t =
-  let loc = constr_loc t in
-  mkFwdCast (FwdHint (s,false)) loc t (mkCHole loc)
-let mkFwdHintNoTC s t =
-  let loc = constr_loc t in
-  mkFwdCast (FwdHint (s,true)) loc t (mkCHole loc)
-
-let pr_gen_fwd prval prc prlc fk (bs, c) =
-  let prc s = str s ++ spc () ++ prval prc prlc c in
-  match fk, bs with
-  | FwdHint (s,_), [Bcast t] -> str s ++ spc () ++ prlc t
-  | FwdHint (s,_), _ ->  prc (s ^ "(* typeof *)")
-  | FwdHave, [Bcast t] -> str ":" ++ spc () ++ prlc t ++ prc " :="
-  | _, [] -> prc " :="
-  | _, _ -> spc () ++ pr_list spc (pr_binder prlc) bs ++ prc " :="
-
-let pr_fwd_guarded prval prval' = function
-| (fk, h), (_, (_, Some c)) ->
-  pr_gen_fwd prval pr_constr_expr prl_constr_expr fk (format_constr_expr h c)
-| (fk, h), (_, (c, None)) ->
-  pr_gen_fwd prval' pr_glob_constr prl_glob_constr fk (format_glob_constr h c)
-
-let pr_unguarded prc prlc = prlc
-
-let pr_fwd = pr_fwd_guarded pr_unguarded pr_unguarded
-let pr_ssrfwd _ _ _ = pr_fwd
- 
-ARGUMENT EXTEND ssrfwd TYPED AS (ssrfwdfmt * ssrterm) PRINTED BY pr_ssrfwd
-  | [ ":=" lconstr(c) ] -> [ mkFwdVal FwdPose c ]
-  | [ ":" lconstr (t) ":=" lconstr(c) ] -> [ mkFwdCast FwdPose loc t c ]
-END
-
-(** Independent parsing for binders *)
-
-(* The pose, pose fix, and pose cofix tactics use these internally to  *)
-(* parse argument fragments.                                           *)
-
-let pr_ssrbvar prc _ _ v = prc v
-
-ARGUMENT EXTEND ssrbvar TYPED AS constr PRINTED BY pr_ssrbvar
-| [ ident(id) ] -> [ mkCVar loc id ]
-| [ "_" ] -> [ mkCHole loc ]
-END
-
-let bvar_lname = function
-  | CRef (Ident (loc, id), _) -> loc, Name id
-  | c -> constr_loc c, Anonymous
-
-let pr_ssrbinder prc _ _ (_, c) = prc c
-
-ARGUMENT EXTEND ssrbinder TYPED AS ssrfwdfmt * constr PRINTED BY pr_ssrbinder
- | [ ssrbvar(bv) ] ->
-   [ let xloc, _ as x = bvar_lname bv in
-     (FwdPose, [BFvar]),
-     CLambdaN (loc,[[x],Default Explicit,mkCHole xloc],mkCHole loc) ]
- | [ "(" ssrbvar(bv) ")" ] ->
-   [ let xloc, _ as x = bvar_lname bv in
-     (FwdPose, [BFvar]),
-     CLambdaN (loc,[[x],Default Explicit,mkCHole xloc],mkCHole loc) ]
- | [ "(" ssrbvar(bv) ":" lconstr(t) ")" ] ->
-   [ let x = bvar_lname bv in
-     (FwdPose, [BFdecl 1]),
-     CLambdaN (loc, [[x], Default Explicit, t], mkCHole loc) ]
- | [ "(" ssrbvar(bv) ne_ssrbvar_list(bvs) ":" lconstr(t) ")" ] ->
-   [ let xs = List.map bvar_lname (bv :: bvs) in
-     let n = List.length xs in
-     (FwdPose, [BFdecl n]),
-     CLambdaN (loc, [xs, Default Explicit, t], mkCHole loc) ]
- | [ "(" ssrbvar(id) ":" lconstr(t) ":=" lconstr(v) ")" ] ->
-   [ let loc' = Loc.join_loc (constr_loc t) (constr_loc v) in
-     let v' = CCast (loc', v, dC t) in
-     (FwdPose,[BFdef true]), CLetIn (loc,bvar_lname id, v',mkCHole loc) ]
- | [ "(" ssrbvar(id) ":=" lconstr(v) ")" ] ->
-   [ (FwdPose,[BFdef false]), CLetIn (loc,bvar_lname id, v,mkCHole loc) ]
-END
-
-GEXTEND Gram
-  GLOBAL: ssrbinder;
-  ssrbinder: [
-  [  ["of" | "&"]; c = operconstr LEVEL "99" ->
-     let loc = !@loc in
-     (FwdPose, [BFvar]),
-     CLambdaN (loc,[[loc,Anonymous],Default Explicit,c],mkCHole loc) ]
-  ];
-END
-
-let rec binders_fmts = function
-  | ((_, h), _) :: bs -> h @ binders_fmts bs
-  | _ -> []
-
-let push_binders c2 bs =
-  let loc2 = constr_loc c2 in let mkloc loc1 = Loc.join_loc loc1 loc2 in
-  let rec loop ty c = function
-  | (_, CLambdaN (loc1, b, _)) :: bs when ty ->
-      CProdN (mkloc loc1, b, loop ty c bs)
-  | (_, CLambdaN (loc1, b, _)) :: bs ->
-      CLambdaN (mkloc loc1, b, loop ty c bs)
-  | (_, CLetIn (loc1, x, v, _)) :: bs ->
-      CLetIn (mkloc loc1, x, v, loop ty c bs)
-  | [] -> c
-  | _ -> anomaly "binder not a lambda nor a let in" in
-  match c2 with
-  | CCast (x, ct, CastConv cty) ->
-      (CCast (x, loop false ct bs, CastConv (loop true cty bs)))
-  | ct -> loop false ct bs
-
-let rec fix_binders = function
-  | (_, CLambdaN (_, [xs, _, t], _)) :: bs ->
-      LocalRawAssum (xs, Default Explicit, t) :: fix_binders bs
-  | (_, CLetIn (_, x, v, _)) :: bs ->
-    LocalRawDef (x, v) :: fix_binders bs
-  | _ -> []
-
-let pr_ssrstruct _ _ _ = function
-  | Some id -> str "{struct " ++ pr_id id ++ str "}"
-  | None -> mt ()
-
-ARGUMENT EXTEND ssrstruct TYPED AS ident option PRINTED BY pr_ssrstruct
-| [ "{" "struct" ident(id) "}" ] -> [ Some id ]
-| [ ] -> [ None ]
-END
-
-(** The "pose" tactic *)
-
-(* The plain pose form. *)
-
-let bind_fwd bs = function
-  | (fk, h), (ck, (rc, Some c)) ->
-    (fk,binders_fmts bs @ h), (ck,(rc,Some (push_binders c bs)))
-  | fwd -> fwd
-
-ARGUMENT EXTEND ssrposefwd TYPED AS ssrfwd PRINTED BY pr_ssrfwd
-  | [ ssrbinder_list(bs) ssrfwd(fwd) ] -> [ bind_fwd bs fwd ]
-END
-
-(* The pose fix form. *)
-
-let pr_ssrfixfwd _ _ _ (id, fwd) = str " fix " ++ pr_id id ++ pr_fwd fwd
-
-let bvar_locid = function
-  | CRef (Ident (loc, id), _) -> loc, id
-  | _ -> CErrors.error "Missing identifier after \"(co)fix\""
-
-
-ARGUMENT EXTEND ssrfixfwd TYPED AS ident * ssrfwd PRINTED BY pr_ssrfixfwd
-  | [ "fix" ssrbvar(bv) ssrbinder_list(bs) ssrstruct(sid) ssrfwd(fwd) ] ->
-    [ let (_, id) as lid = bvar_locid bv in
-      let (fk, h), (ck, (rc, oc)) = fwd in
-      let c = Option.get oc in
-      let has_cast, t', c' = match format_constr_expr h c with
-      | [Bcast t'], c' -> true, t', c'
-      | _ -> false, mkCHole (constr_loc c), c in
-      let lb = fix_binders bs in
-      let has_struct, i =
-        let rec loop = function
-          (l', Name id') :: _ when Option.equal Id.equal sid (Some id') -> true, (l', id')
-          | [l', Name id'] when sid = None -> false, (l', id')
-          | _ :: bn -> loop bn
-          | [] -> CErrors.error "Bad structural argument" in
-        loop (names_of_local_assums lb) in
-      let h' = BFrec (has_struct, has_cast) :: binders_fmts bs in
-      let fix = CFix (loc, lid, [lid, (Some i, CStructRec), lb, t', c']) in
-      id, ((fk, h'), (ck, (rc, Some fix))) ]
-END
-
-
-(* The pose cofix form. *)
-
-let pr_ssrcofixfwd _ _ _ (id, fwd) = str " cofix " ++ pr_id id ++ pr_fwd fwd
-
-ARGUMENT EXTEND ssrcofixfwd TYPED AS ssrfixfwd PRINTED BY pr_ssrcofixfwd
-  | [ "cofix" ssrbvar(bv) ssrbinder_list(bs) ssrfwd(fwd) ] ->
-    [ let _, id as lid = bvar_locid bv in
-      let (fk, h), (ck, (rc, oc)) = fwd in
-      let c = Option.get oc in
-      let has_cast, t', c' = match format_constr_expr h c with
-      | [Bcast t'], c' -> true, t', c'
-      | _ -> false, mkCHole (constr_loc c), c in
-      let h' = BFrec (false, has_cast) :: binders_fmts bs in
-      let cofix = CCoFix (loc, lid, [lid, fix_binders bs, t', c']) in
-      id, ((fk, h'), (ck, (rc, Some cofix)))
-    ]
-END
-
-let ssrposetac ist (id, (_, t)) gl =
-  let sigma, t, ucst, _ = pf_abs_ssrterm ist gl t in
-  posetac id t (pf_merge_uc ucst gl)
-
-
-let prof_ssrposetac = mk_profiler "ssrposetac";;
-let ssrposetac arg gl = prof_ssrposetac.profile (ssrposetac arg) gl;;
-  
 TACTIC EXTEND ssrpose
 | [ "pose" ssrfixfwd(ffwd) ] -> [ Proofview.V82.tactic (ssrposetac ist ffwd) ]
 | [ "pose" ssrcofixfwd(ffwd) ] -> [ Proofview.V82.tactic (ssrposetac ist ffwd) ]
@@ -4712,50 +2936,6 @@ END
 
 (* type ssrsetfwd = ssrfwd * ssrdocc *)
 
-let guard_setrhs s i = s.[i] = '{'
-
-let pr_setrhs occ prc prlc c =
-  if occ = nodocc then pr_guarded guard_setrhs prlc c else pr_docc occ ++ prc c
-
-let pr_fwd_guarded prval prval' = function
-| (fk, h), (_, (_, Some c)) ->
-  pr_gen_fwd prval pr_constr_expr prl_constr_expr fk (format_constr_expr h c)
-| (fk, h), (_, (c, None)) ->
-  pr_gen_fwd prval' pr_glob_constr prl_glob_constr fk (format_glob_constr h c)
-
-(* This does not print the type, it should be fixed... *)
-let pr_ssrsetfwd _ _ _ (((fk,_),(t,_)), docc) =
-  pr_gen_fwd (fun _ _ -> pr_cpattern)
-    (fun _ -> mt()) (fun _ -> mt()) fk ([Bcast ()],t)
-
-ARGUMENT EXTEND ssrsetfwd
-TYPED AS (ssrfwdfmt * (lcpattern * ssrterm option)) * ssrdocc
-PRINTED BY pr_ssrsetfwd
-| [ ":" lconstr(t) ":=" "{" ssrocc(occ) "}" cpattern(c) ] ->
-  [ mkssrFwdCast FwdPose loc (mk_lterm t) c, mkocc occ ]
-| [ ":" lconstr(t) ":=" lcpattern(c) ] ->
-  [ mkssrFwdCast FwdPose loc (mk_lterm t) c, nodocc ]
-| [ ":=" "{" ssrocc(occ) "}" cpattern(c) ] ->
-  [ mkssrFwdVal FwdPose c, mkocc occ ]
-| [ ":=" lcpattern(c) ] -> [ mkssrFwdVal FwdPose c, nodocc ]
-END
-
-let ssrsettac ist id ((_, (pat, pty)), (_, occ)) gl =
-  let pat = interp_cpattern ist gl pat (Option.map snd pty) in
-  let cl, sigma, env = pf_concl gl, project gl, pf_env gl in
-  let (c, ucst), cl = 
-    try fill_occ_pattern ~raise_NoMatch:true env sigma cl pat occ 1
-    with NoMatch -> redex_of_pattern ~resolve_typeclasses:true env pat, cl in
-  if occur_existential c then errorstrm(str"The pattern"++spc()++
-    pr_constr_pat c++spc()++str"did not match and has holes."++spc()++
-    str"Did you mean pose?") else
-  let c, (gl, cty) =  match kind_of_term c with
-  | Cast(t, DEFAULTcast, ty) -> t, (gl, ty)
-  | _ -> c, pf_type_of gl c in
-  let cl' = mkLetIn (Name id, c, cty, cl) in
-  let gl = pf_merge_uc ucst gl in
-  tclTHEN (Proofview.V82.of_tactic (convert_concl cl')) (introid id) gl
-
 TACTIC EXTEND ssrset
 | [ "set" ssrfwdid(id) ssrsetfwd(fwd) ssrclauses(clauses) ] ->
   [ Proofview.V82.tactic (tclCLAUSES ist (ssrsettac ist id fwd) clauses) ]
@@ -4765,266 +2945,8 @@ END
 
 (* type ssrhavefwd = ssrfwd * ssrhint *)
 
-let pr_ssrhavefwd _ _ prt (fwd, hint) = pr_fwd fwd ++ pr_hint prt hint
-
-ARGUMENT EXTEND ssrhavefwd TYPED AS ssrfwd * ssrhint PRINTED BY pr_ssrhavefwd
-| [ ":" lconstr(t) ssrhint(hint) ] -> [ mkFwdHint ":" t, hint ]
-| [ ":" lconstr(t) ":=" lconstr(c) ] -> [ mkFwdCast FwdHave loc t c, nohint ]
-| [ ":" lconstr(t) ":=" ] -> [ mkFwdHintNoTC ":" t, nohint ]
-| [ ":=" lconstr(c) ] -> [ mkFwdVal FwdHave c, nohint ]
-END
-
-let intro_id_to_binder = List.map (function 
-  | IpatId id ->
-      let xloc, _ as x = bvar_lname (mkCVar dummy_loc id) in
-      (FwdPose, [BFvar]),
-        CLambdaN (dummy_loc, [[x], Default Explicit, mkCHole xloc],
-          mkCHole dummy_loc)
-  | _ -> anomaly "non-id accepted as binder")
-
-let binder_to_intro_id = List.map (function
-  | (FwdPose, [BFvar]), CLambdaN (_,[ids,_,_],_)
-  | (FwdPose, [BFdecl _]), CLambdaN (_,[ids,_,_],_) ->
-      List.map (function (_, Name id) -> IpatId id | _ -> IpatAnon) ids
-  | (FwdPose, [BFdef _]), CLetIn (_,(_,Name id),_,_) -> [IpatId id]
-  | (FwdPose, [BFdef _]), CLetIn (_,(_,Anonymous),_,_) -> [IpatAnon]
-  | _ -> anomaly "ssrbinder is not a binder")
-
-let pr_ssrhavefwdwbinders _ _ prt (tr,((hpats, (fwd, hint)))) =
-  pr_hpats hpats ++ pr_fwd fwd ++ pr_hint prt hint
-
-ARGUMENT EXTEND ssrhavefwdwbinders
-  TYPED AS bool * (ssrhpats * (ssrfwd * ssrhint))
-  PRINTED BY pr_ssrhavefwdwbinders
-| [ ssrhpats_wtransp(trpats) ssrbinder_list(bs) ssrhavefwd(fwd) ] ->
-  [ let tr, pats = trpats in
-    let ((clr, pats), binders), simpl = pats in
-    let allbs = intro_id_to_binder binders @ bs in
-    let allbinders = binders @ List.flatten (binder_to_intro_id bs) in
-    let hint = bind_fwd allbs (fst fwd), snd fwd in
-    tr, ((((clr, pats), allbinders), simpl), hint) ]
-END
 
 (* Pltac. *)
-
-let is_Evar_or_CastedMeta x =
-  isEvar_or_Meta x ||
-  (isCast x && isEvar_or_Meta (pi1 (destCast x)))
-
-let occur_existential_or_casted_meta c =
-  let rec occrec c = match kind_of_term c with
-    | Evar _ -> raise Not_found
-    | Cast (m,_,_) when isMeta m -> raise Not_found
-    | _ -> iter_constr occrec c
-  in try occrec c; false with Not_found -> true
-
-let examine_abstract id gl =
-  let gl, tid = pf_type_of gl id in
-  let abstract, gl = pf_mkSsrConst "abstract" gl in
-  if not (isApp tid) || not (Term.eq_constr (fst(destApp tid)) abstract) then
-    errorstrm(strbrk"not an abstract constant: "++pr_constr id);
-  let _, args_id = destApp tid in
-  if Array.length args_id <> 3 then
-    errorstrm(strbrk"not a proper abstract constant: "++pr_constr id);
-  if not (is_Evar_or_CastedMeta args_id.(2)) then
-    errorstrm(strbrk"abstract constant "++pr_constr id++str" already used");
-  tid, args_id
-
-let pf_find_abstract_proof check_lock gl abstract_n = 
-  let fire gl t = Reductionops.nf_evar (project gl) t in
-  let abstract, gl = pf_mkSsrConst "abstract" gl in
-  let l = Evd.fold_undefined (fun e ei l ->
-    match kind_of_term ei.Evd.evar_concl with
-    | App(hd, [|ty; n; lock|])
-      when (not check_lock || 
-                 (occur_existential_or_casted_meta (fire gl ty) &&
-                  is_Evar_or_CastedMeta (fire gl lock))) &&
-      Term.eq_constr hd abstract && Term.eq_constr n abstract_n -> e::l
-    | _ -> l) (project gl) [] in
-  match l with
-  | [e] -> e
-  | _ -> errorstrm(strbrk"abstract constant "++pr_constr abstract_n++
-           strbrk" not found in the evar map exactly once. "++
-           strbrk"Did you tamper with it?")
-
-let unfold cl =
-  let module R = Reductionops in let module F = CClosure.RedFlags in
-  reduct_in_concl (R.clos_norm_flags (F.mkflags
-    (List.map (fun c -> F.fCONST (fst (destConst c))) cl @
-       [F.fBETA; F.fMATCH; F.fFIX; F.fCOFIX])))
-
-let havegentac ist t gl =
-  let sigma, c, ucst, _ = pf_abs_ssrterm ist gl t in
-  let gl = pf_merge_uc ucst gl in
-  let gl, cty = pf_type_of gl c in
-  apply_type (mkArrow cty (pf_concl gl)) [c] gl
-
-let havetac ist
-  (transp,((((clr, pats), binders), simpl), (((fk, _), t), hint)))
-  suff namefst gl 
-=
- let concl = pf_concl gl in
- let skols, pats =
-   List.partition (function IpatNewHidden _ -> true | _ -> false) pats in
- let itac_mkabs = introstac ~ist skols in
- let itac_c = introstac ~ist (IpatSimpl(clr,Nop) :: pats) in
- let itac, id, clr = introstac ~ist pats, tclIDTAC, cleartac clr in
- let binderstac n =
-   let rec aux = function 0 -> [] | n -> IpatAnon :: aux (n-1) in
-   tclTHEN (if binders <> [] then introstac ~ist (aux n) else tclIDTAC)
-     (introstac ~ist binders) in
- let simpltac = introstac ~ist simpl in
- let fixtc =
-   not !ssrhaveNOtcresolution &&
-   match fk with FwdHint(_,true) -> false | _ -> true in
- let hint = hinttac ist true hint in
- let cuttac t gl =
-   if transp then
-     let have_let, gl = pf_mkSsrConst "ssr_have_let" gl in
-     let step = mkApp (have_let, [|concl;t|]) in
-     let gl, _ = pf_e_type_of gl step in
-     applyn ~with_evars:true ~with_shelve:false 2 step gl
-   else basecuttac "ssr_have" t gl in
- (* Introduce now abstract constants, so that everything sees them *)
- let abstract_key, gl = pf_mkSsrConst "abstract_key" gl in
- let unlock_abs (idty,args_id) gl =
-    let gl, _ = pf_e_type_of gl idty in
-    pf_unify_HO gl args_id.(2) abstract_key in
- tclTHENFIRST itac_mkabs (fun gl ->
-  let mkt t = mk_term xNoFlag t in
-  let mkl t = (xNoFlag, (t, None)) in
-  let interp gl rtc t = pf_abs_ssrterm ~resolve_typeclasses:rtc ist gl t in
-  let interp_ty gl rtc t =
-    let a,b,_,u = pf_interp_ty ~resolve_typeclasses:rtc ist gl t in a,b,u in
-  let ct, cty, hole, loc = match t with
-    | _, (_, Some (CCast (loc, ct, CastConv cty))) ->
-      mkt ct, mkt cty, mkt (mkCHole dummy_loc), loc
-    | _, (_, Some ct) ->
-      mkt ct, mkt (mkCHole dummy_loc), mkt (mkCHole dummy_loc), dummy_loc
-    | _, (GCast (loc, ct, CastConv cty), None) ->
-      mkl ct, mkl cty, mkl mkRHole, loc
-    | _, (t, None) -> mkl t, mkl mkRHole, mkl mkRHole, dummy_loc in
-  let gl, cut, sol, itac1, itac2 =
-   match fk, namefst, suff with
-   | FwdHave, true, true ->
-     errorstrm (str"Suff have does not accept a proof term")
-   | FwdHave, false, true ->
-     let cty = combineCG cty hole (mkCArrow loc) mkRArrow in
-     let _,t,uc,_ = interp gl false (combineCG ct cty (mkCCast loc) mkRCast) in
-     let gl = pf_merge_uc uc gl in
-     let gl, ty = pf_type_of gl t in
-     let ctx, _ = decompose_prod_n 1 ty in
-     let assert_is_conv gl =
-       try Proofview.V82.of_tactic (convert_concl (compose_prod ctx concl)) gl
-       with _ -> errorstrm (str "Given proof term is not of type " ++
-         pr_constr (mkArrow (mkVar (id_of_string "_")) concl)) in
-     gl, ty, tclTHEN assert_is_conv (Proofview.V82.of_tactic (apply t)), id, itac_c
-   | FwdHave, false, false ->
-     let skols = List.flatten (List.map (function
-       | IpatNewHidden ids -> ids
-       | _ -> assert false) skols) in
-     let skols_args =
-       List.map (fun id -> examine_abstract (mkVar id) gl) skols in
-     let gl = List.fold_right unlock_abs skols_args gl in
-     let sigma, t, uc, n_evars =
-       interp gl false (combineCG ct cty (mkCCast loc) mkRCast) in
-     if skols <> [] && n_evars <> 0 then
-       CErrors.error ("Automatic generalization of unresolved implicit "^
-                     "arguments together with abstract variables is "^
-                     "not supported");
-     let gl = re_sig (sig_it gl) (Evd.merge_universe_context sigma uc) in
-     let gs =
-       List.map (fun (_,a) ->
-         pf_find_abstract_proof false gl a.(1)) skols_args in
-     let tacopen_skols gl =
-        let stuff, g = Refiner.unpackage gl in
-        Refiner.repackage stuff (gs @ [g]) in
-     let gl, ty = pf_e_type_of gl t in
-     gl, ty, Proofview.V82.of_tactic (apply t), id,
-       tclTHEN (tclTHEN itac_c simpltac)
-         (tclTHEN tacopen_skols (fun gl ->
-            let abstract, gl = pf_mkSsrConst "abstract" gl in
-            Proofview.V82.of_tactic (unfold [abstract; abstract_key]) gl))
-   | _,true,true  ->
-     let _, ty, uc = interp_ty gl fixtc cty in let gl = pf_merge_uc uc gl in
-     gl, mkArrow ty concl, hint, itac, clr
-   | _,false,true ->
-     let _, ty, uc = interp_ty gl fixtc cty in let gl = pf_merge_uc uc gl in
-     gl, mkArrow ty concl, hint, id, itac_c
-   | _, false, false -> 
-     let n, cty, uc = interp_ty gl fixtc cty in let gl = pf_merge_uc uc gl in
-     gl, cty, tclTHEN (binderstac n) hint, id, tclTHEN itac_c simpltac
-   | _, true, false -> assert false in
-  tclTHENS (cuttac cut) [ tclTHEN sol itac1; itac2 ] gl)
- gl
-;;
-
-(* to extend the abstract value one needs:
-  Utility lemma to partially instantiate an abstract constant type.
-  Lemma use_abstract T n l (x : abstract T n l) : T.
-  Proof. by case: l x. Qed.
-*)
-let ssrabstract ist gens (*last*) gl =
-  let main _ (_,cid) ist gl =
-(*
-    let proj1, proj2, prod =
-      let pdata = build_prod () in
-      pdata.Coqlib.proj1, pdata.Coqlib.proj2, pdata.Coqlib.typ in
-*)
-    let concl, env = pf_concl gl, pf_env gl in
-    let fire gl t = Reductionops.nf_evar (project gl) t in
-    let abstract, gl = pf_mkSsrConst "abstract" gl in
-    let abstract_key, gl = pf_mkSsrConst "abstract_key" gl in
-    let cid_interpreted = interp_cpattern ist gl cid None in
-    let id = mkVar (Option.get (id_of_pattern cid_interpreted)) in
-    let idty, args_id = examine_abstract id gl in
-    let abstract_n = args_id.(1) in
-    let abstract_proof = pf_find_abstract_proof true gl abstract_n in 
-    let gl, proof =
-      let pf_unify_HO gl a b =
-        try pf_unify_HO gl a b
-        with _ -> errorstrm(strbrk"The abstract variable "++pr_constr id++
-          strbrk" cannot abstract this goal.  Did you generalize it?") in
-      let rec find_hole p t =
-        match kind_of_term t with
-        | Evar _ (*when last*) -> pf_unify_HO gl concl t, p
-        | Meta _ (*when last*) -> pf_unify_HO gl concl t, p
-        | Cast(m,_,_) when isEvar_or_Meta m (*when last*) -> pf_unify_HO gl concl t, p
-(*
-        | Evar _ ->
-            let sigma, it = project gl, sig_it gl in
-            let sigma, ty = Evarutil.new_type_evar sigma env in
-            let gl = re_sig it sigma in
-            let p = mkApp (proj2,[|ty;concl;p|]) in
-            let concl = mkApp(prod,[|ty; concl|]) in
-            pf_unify_HO gl concl t, p
-        | App(hd, [|left; right|]) when Term.eq_constr hd prod ->
-            find_hole (mkApp (proj1,[|left;right;p|])) left
-*)
-        | _ -> errorstrm(strbrk"abstract constant "++pr_constr abstract_n++
-               strbrk" has an unexpected shape. Did you tamper with it?")
-      in
-        find_hole
-          ((*if last then*) id
-          (*else mkApp(mkSsrConst "use_abstract",Array.append args_id [|id|])*))
-          (fire gl args_id.(0)) in
-    let gl = (*if last then*) pf_unify_HO gl abstract_key args_id.(2) (*else gl*) in
-    let gl, _ = pf_e_type_of gl idty in
-    let proof = fire gl proof in
-(*     if last then *)
-      let tacopen gl =
-        let stuff, g = Refiner.unpackage gl in
-        Refiner.repackage stuff [ g; abstract_proof ] in
-      tclTHENS tacopen [tclSOLVE [Proofview.V82.of_tactic (apply proof)]; Proofview.V82.of_tactic (unfold[abstract;abstract_key])] gl
-(* else apply proof gl *)
-  in
-  let introback ist (gens, _) =
-    introstac ~ist
-      (List.map (fun (_,cp) -> match id_of_pattern (interp_cpattern ist gl cp None) with
-        | None -> IpatAnon
-        | Some id -> IpatId id)
-        (List.tl (List.hd gens))) in
-  tclTHEN (with_dgens gens main ist) (introback ist gens) gl
 
 (* The standard TACTIC EXTEND does not work for abstract *)
 GEXTEND Gram
@@ -5040,9 +2962,6 @@ TACTIC EXTEND ssrabstract
       errorstrm (str"dependents switches '/' not allowed here");
     Proofview.V82.tactic (ssrabstract ist gens) ]
 END
-
-let prof_havetac = mk_profiler "havetac";;
-let havetac arg a b gl = prof_havetac.profile (havetac arg a b) gl;;
 
 TACTIC EXTEND ssrhave
 | [ "have" ssrhavefwdwbinders(fwd) ] ->
@@ -5270,6 +3189,13 @@ TACTIC EXTEND ssrgenhave2
     ssr_idcomma(id) ssrhpats_nobs(pats) ssrwlogfwd(fwd) ssrhint(hint) ] ->
   [ let pats = augment_preclr clr pats in
     Proofview.V82.tactic (wlogtac ist pats fwd hint false (`Gen id)) ]
+END
+
+(* => *)
+TACTIC EXTEND ssrtclintros
+| [ "YouShouldNotTypeThis" ssrintrosarg(arg) ] ->
+  [ let tac, intros = arg in
+    Proofview.V82.tactic (tclINTROS ist (fun ist -> ssrevaltac ist tac) intros) ]
 END
 
 (* We wipe out all the keywords generated by the grammar rules we defined. *)
