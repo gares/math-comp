@@ -16,18 +16,27 @@ else
 COQDEP=$(COQBIN)coqdep
 endif
 
-OLD_MAKEFLAGS:=$(MAKEFLAGS)
-MAKEFLAGS+=-B
-
 .DEFAULT_GOAL := all
+.PHONY: all .merlin *.vo *.vio clean
 
-%:
-	$(H)[ -e Makefile.coq ] || $(call coqmakefile,ssreflect)
-	$(H)MAKEFLAGS=$(OLD_MAKEFLAGS) $(MAKE) --no-print-directory \
-		-f Makefile.coq $* \
-		COQDEP='$(COQDEP) -exclude-dir plugin -c'
+coqmake = $(MAKE) --no-print-directory \
+                  -f Makefile.coq $* \
+                  COQDEP='$(COQDEP) -exclude-dir plugin -c'
+
+all: Makefile.coq
+	$(H)$(coqmake) $@
+.merlin: Makefile.coq
+	$(H)$(coqmake) $@
+%.vo: Makefile.coq
+	$(H)$(coqmake) $@
+%.vio: Makefile.coq
+	$(H)$(coqmake) $@
 
 clean:
-	$(H)MAKEFLAGS=$(OLD_MAKEFLAGS) $(MAKE) --no-print-directory \
-		-f Makefile.coq clean
+	$(H)$(MAKE) --no-print-directory -f Makefile.coq clean
 	$(H)rm -f Makefile.coq
+
+
+Makefile.coq: Make
+	$(H)$(call coqmakefile,ssreflect)
+
