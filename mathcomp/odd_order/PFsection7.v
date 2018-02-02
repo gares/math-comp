@@ -355,7 +355,7 @@ Lemma Dade_Ind1_sub_lin (nu : {additive 'CF(L) -> 'CF(G)}) zeta :
         [/\ {in A, forall x, chi^\rho x = '[beta, chi]}
           & '[chi^\rho] = #|A|%:R / #|L|%:R * '[beta, chi] ^+ 2]}].
 Proof.
-move=> [[Inu Znu] nu_tau] nt_calS /irrWnorm Nzeta1 Szeta zeta1.
+move=> -[[Inu Znu] nu_tau] nt_calS /irrWnorm Nzeta1 Szeta zeta1.
 set mu := _ - _ => beta calSnu sumSnu; pose S1 := rem zeta calS.
 have defS: perm_eq calS (zeta :: S1) := perm_to_rem Szeta.
 have defZS: 'Z[calS, L^#] =i 'Z[calS, A] by apply: zcharD1_seqInd.
@@ -507,7 +507,7 @@ Lemma cfdot_real_vchar_even phi psi :
     phi \in 'Z[irr G] /\ cfReal phi  -> psi \in 'Z[irr G] /\ cfReal psi ->
   (2 %| '[phi, psi])%C = (2 %| '[phi, 1])%C || (2 %| '[psi, 1])%C.
 Proof.
-move=> [Zphi Rphi] [Zpsi Rpsi]; rewrite cfdot_vchar_r // (bigD1 (0 : 'I__)) //=.
+move=> -[Zphi Rphi] [Zpsi Rpsi]; rewrite cfdot_vchar_r // (bigD1 (0 : 'I__)) //=.
 rewrite addrC -irr0 (bigID [pred i | conjC_Iirr i < i]%N) /=.
 set a1 := \sum_(i | _) _; set a2 := \sum_(i | _) _; suffices ->: a1 = a2.
   rewrite -mulr2n -mulr_natr (rpredDl _ (dvdC_mull _ _)) //; last first.
@@ -727,7 +727,7 @@ pose beta i := tau i ('Ind[L i, H i] 1 - 'chi_(r i)).
 have betaP i := Dade_Ind1_sub_lin (cohS i) (ntS i) (mem_irr _) (Sr i) (r1 i).
 pose chi i := nu i 'chi_(r i); pose c i j := '[beta i, chi j].
 have:= betaP i1; rewrite -/(S _) -/(tau _) -/(beta _) -/(chi _) -/(e_ _) -/e.
-move=> [[oSnu1 o_beta1 Zbeta1] [Gamma [oSnuGamma oGamma1] [a Za def_beta1]]].
+move=> -[[oSnu1 o_beta1 Zbeta1] [Gamma [oSnuGamma oGamma1] [a Za def_beta1]]].
 have [_ lt_e_h2] := e_bounds i1; rewrite -/(rho _) -/(h_ _) -/h.
 case/(_ lt_e_h2)=> min_rho1 maxGamma _ {lt_e_h2}.
 pose calB := [set i | (i != i1) && (c i i1 == 0)].

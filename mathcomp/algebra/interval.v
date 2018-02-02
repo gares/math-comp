@@ -182,15 +182,15 @@ Definition le_boundr b1 b2 :=
 Lemma itv_boundlr bl br x :
   (x \in Interval bl br) =
   (le_boundl bl (BClose x)) && (le_boundr (BClose x) br).
-Proof. by move: bl br => [[] a|] [[] b|]. Qed.
+Proof. by move: bl br => -[[] a|] [[] b|]. Qed.
 
 Lemma le_boundr_refl : reflexive le_boundr.
-Proof. by move=> [[] b|]; rewrite /le_boundr /= ?lerr. Qed.
+Proof. by move=> -[[] b|]; rewrite /le_boundr /= ?lerr. Qed.
 
 Hint Resolve le_boundr_refl.
 
 Lemma le_boundl_refl : reflexive le_boundl.
-Proof. by move=> [[] b|]; rewrite /le_boundl /= ?lerr. Qed.
+Proof. by move=> -[[] b|]; rewrite /le_boundl /= ?lerr. Qed.
 
 Hint Resolve le_boundl_refl.
 
@@ -206,7 +206,7 @@ Lemma itv_xx x bl br :
   Interval (BOpen_if bl x) (BOpen_if br x) =i 
   if ~~ (bl || br) then pred1 x else pred0.
 Proof.
-by move: bl br => [] [] y /=; rewrite !inE 1?eq_sym (eqr_le, lter_anti).
+by move: bl br => -[] [] y /=; rewrite !inE 1?eq_sym (eqr_le, lter_anti).
 Qed.
 
 Lemma itv_gte ba xa bb xb :  xb <= xa ?< if ~~ (ba || bb) 
@@ -219,12 +219,12 @@ Qed.
 Lemma boundl_in_itv : forall ba xa b,
   xa \in Interval (BOpen_if ba xa) b = 
   if ba then false else le_boundr (BClose xa) b.
-Proof. by move=> [] xa [[] xb|] //=; rewrite inE lterr. Qed.
+Proof. by move=> -[] xa [[] xb|] //=; rewrite inE lterr. Qed.
 
 Lemma boundr_in_itv : forall bb xb a,
   xb \in Interval a (BOpen_if bb xb) =
   if bb then false else le_boundl a (BClose xb).
-Proof. by move=> [] xb [[] xa|] //=; rewrite inE lterr ?andbT ?andbF. Qed.
+Proof. by move=> -[] xb [[] xa|] //=; rewrite inE lterr ?andbT ?andbF. Qed.
 
 Definition bound_in_itv := (boundl_in_itv, boundr_in_itv).
 
@@ -253,7 +253,7 @@ Definition subitv (i1 i2 : interval R) :=
 Lemma subitvP : forall (i2 i1 : interval R), 
   (subitv i1 i2) -> {subset i1 <= i2}.
 Proof.
-by move=> [[[] a2|] [[] b2|]] [[[] a1|] [[] b1|]];
+by move=> -[[[] a2|] [[] b2|]] [[[] a1|] [[] b1|]];
   rewrite /subitv //; case/andP=> /= ha hb; move=> x hx; rewrite ?inE;
     rewrite ?(ler_trans ha) ?(ler_lt_trans ha) ?(ltr_le_trans ha) //;
       rewrite ?(ler_trans _ hb) ?(ltr_le_trans _ hb) ?(ler_lt_trans _ hb) //;
@@ -298,7 +298,7 @@ Qed.
 
 Lemma itv_splitI : forall a b, forall x,
   x \in Interval a b = (x \in Interval a (BInfty _)) && (x \in Interval (BInfty _) b).
-Proof. by move=> [[] a|] [[] b|] x; rewrite ?inE ?andbT. Qed.
+Proof. by move=> -[[] a|] [[] b|] x; rewrite ?inE ?andbT. Qed.
 
 
 Lemma real_lersifN x y b : x \in Num.real -> y \in Num.real ->
@@ -308,7 +308,7 @@ Proof. by case: b => [] xR yR /=; rewrite (real_ltrNge, real_lerNgt). Qed.
 Lemma oppr_itv ba bb (xa xb x : R) :
   (-x \in Interval (BOpen_if ba xa) (BOpen_if bb xb)) = 
   (x \in Interval (BOpen_if bb (-xb)) (BOpen_if ba (-xa))).
-Proof. by move: ba bb => [] []; rewrite ?inE lter_oppr andbC lter_oppl. Qed.
+Proof. by move: ba bb => -[] []; rewrite ?inE lter_oppr andbC lter_oppl. Qed.
 
 Lemma oppr_itvoo (a b x : R) : (-x \in `]a, b[) = (x \in `](-b), (-a)[).
 Proof. exact: oppr_itv. Qed.
@@ -372,8 +372,8 @@ have [la /=|nla /=] := boolP (le_boundl a _); rewrite -lock.
   by case: a bb hxc {la} => [[] ?|] [] /= /itvP->.
 symmetry; apply: contraNF nla => /andP [hc _].
 case: a hxc hc => [[] xa|] hxc; rewrite /le_boundl //=.
-  by move=> /lersifW /(ltr_le_trans _) -> //; move: b hxc=> [[] ?|] /itvP->.
-by move=> /lersifW /(ler_trans _) -> //; move: b hxc=> [[] ?|] /itvP->.
+  by move=> /lersifW /(ltr_le_trans _) -> //; move: b hxc=> -[[] ?|] /itvP->.
+by move=> /lersifW /(ler_trans _) -> //; move: b hxc=> -[[] ?|] /itvP->.
 Qed.
 
 Lemma itv_splitU2 (x : R) a b : x \in Interval a b ->
@@ -395,7 +395,7 @@ Variable R : realFieldType.
 Lemma mid_in_itv : forall ba bb (xa xb : R), xa <= xb ?< if (ba || bb)
   -> mid xa xb \in Interval (BOpen_if ba xa) (BOpen_if bb xb).
 Proof.
-by move=> [] [] xa xb /= hx; apply/itv_dec=> /=; rewrite ?midf_lte // ?ltrW.
+by move=> -[] [] xa xb /= hx; apply/itv_dec=> /=; rewrite ?midf_lte // ?ltrW.
 Qed.
 
 Lemma mid_in_itvoo : forall (xa xb : R), xa < xb -> mid xa xb \in `]xa, xb[.

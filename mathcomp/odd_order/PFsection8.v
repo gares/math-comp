@@ -250,7 +250,7 @@ Qed.
 
 Lemma typePF_exclusion K : ~ of_typeF M K.
 Proof.
-move=> [[ntH ntU1 defM_K] _ [U0 [sU01 expU0] frobU0]].
+move=> -[[ntH ntU1 defM_K] _ [U0 [sU01 expU0] frobU0]].
 have [[cycW1 hallW1 ntW1 defM] [_ _ _ defM'] _ [_]] := MtypeP; case/negP.
 pose p := pdiv #|W1|; rewrite -/M' -/H in defM defM' frobU0 *.
 have piW1p: p \in \pi(W1) by rewrite pi_pdiv cardG_gt1.

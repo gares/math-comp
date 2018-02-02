@@ -586,8 +586,8 @@ Lemma tau1_mmaxI_asymmetry M Mstar p P q Q q_star Qstar :
   False.
 Proof.
 move: Mstar q_star Qstar => L u U. (* Abbreviate Mstar by L, Qstar by U. *)
-move=> [maxM maxL notMGL] [t1Mp t1Lp EpP] [sylQ sylU nQP nUP].
-move=> [regPQ regPU] [sNQL sNUM]; rewrite setIC in sylU. (* for symmetry *)
+move=> -[maxM maxL notMGL] [t1Mp t1Lp EpP] [sylQ sylU nQP nUP].
+move=> -[regPQ regPU] [sNQL sNUM]; rewrite setIC in sylU. (* for symmetry *)
 have notLGM: gval M \notin L :^: G by rewrite orbit_sym. (* for symmetry *)
 have{EpP} [ntP [sPML abelP dimP]] := (nt_pnElem EpP isT, pnElemP EpP).
 have{sPML} [[sPM sPL] [pP _ _]] := (subsetIP sPML, and3P abelP). 

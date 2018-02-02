@@ -773,7 +773,7 @@ Lemma ndirr_diff (i : dIirr G) : ndirr i != i.
 Proof. by case: i => [] [|] i. Qed.
 
 Lemma ndirrK : involutive (@ndirr G).
-Proof. by move=> [b i]; rewrite /ndirr /= negbK. Qed.
+Proof. by move=> -[b i]; rewrite /ndirr /= negbK. Qed.
 
 Lemma ndirr_inj : injective (@ndirr G).
 Proof. exact: (inv_inj ndirrK). Qed.

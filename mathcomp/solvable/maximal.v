@@ -1608,7 +1608,7 @@ Qed.
 Lemma critical_p_stab_Aut H :
   critical H G -> p.-group G -> p.-group 'C(H | [Aut G]).
 Proof.
-move=> [chH sPhiZ sRZ eqCZ] pG; have sHG := char_sub chH.
+move=> -[chH sPhiZ sRZ eqCZ] pG; have sHG := char_sub chH.
 pose G' := (sdpair1 [Aut G] @* G)%G; pose H' := (sdpair1 [Aut G] @* H)%G.
 apply/pgroupP=> q pr_q; case/Cauchy=>//= f cHF; move: (cHF);rewrite astab_ract.
 case/setIP=> Af cHFP ofq; rewrite -cycle_subG in cHF; apply: (pgroupP pG) => //.

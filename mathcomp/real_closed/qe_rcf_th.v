@@ -1030,7 +1030,7 @@ elim: mods {-2}p {-2}q (erefl (mods p q)) => [|r s IHs] {p q} p q hrpq.
   by rewrite changes_itv_mods0p cindexpC.
 have p_neq0 : p != 0 by rewrite -(mods_eq0 p q) hrpq.
 move: hrpq IHs; rewrite neq0_mods_rec //.
-move=> [_ <-] IHs /= /andP[rpa Ha] /andP[rpb Hb].
+move=> -[_ <-] IHs /= /andP[rpa Ha] /andP[rpb Hb].
 move=> /(_ _ _ (erefl _) Ha Hb) in IHs.
 have [->|q_neq0] := eqVneq q 0; first by rewrite changes_itv_modsp0 cindex0p.
 move: Ha Hb; rewrite neq0_mods_rec //= => /andP[rqa _] /andP[rqb _].
@@ -1137,7 +1137,7 @@ Lemma bounding_polyP (sq : seq {poly R}) :
     <-> exists x, \big[andb/true]_(q <- sq) (q.[x] > 0).
 Proof.
 split=> [|[x]].
-  case; last by move=> [x /andP [? h]]; exists x; rewrite h.
+  case; last by move=> -[x /andP [? h]]; exists x; rewrite h.
     rewrite big_all => /allP hsq.
     have sqn0 : {in sq, forall q, q != 0}.
       by move=> q' /= /hsq; apply: contraL=> /eqP->; rewrite lead_coef0 ltrr.
@@ -1281,13 +1281,13 @@ have [|bq_neq0] := boolP (bounding_poly sq == 0).
   have {Hsq} Hsq q : q \in sq -> q = (lead_coef q)%:P.
     by move=> /Hsq sq1; rewrite [q]size1_polyC ?sq1 // lead_coefC.
   apply: (@equivP (\big[andb/true]_(q <- sq) (0 < lead_coef q))); last first.
-    split; [move=> sq0; exists 0; move: sq0|move=> [x]];
+    split; [move=> sq0; exists 0; move: sq0|move=> -[x]];
     rewrite !big_all => /allP H; apply/allP => q q_sq; have:= H _ q_sq;
     by rewrite [q]Hsq ?lead_coefC ?hornerC.
   have [] := boolP (\big[andb/true]_(q <- _) (0 < lead_coef q)).
     by constructor.
   rewrite !big_all -has_predC => /hasP sq0; apply: (iffP allP) => //=.
-  move: sq0 => [q q_sq /= lq_gt0 /(_ _ q_sq)].
+  move: sq0 => -[q q_sq /= lq_gt0 /(_ _ q_sq)].
   rewrite [q]Hsq ?size_polyC ?lead_coefC //.
   by case: (_ != 0); rewrite /= expr0 mul1r ?(negPf lq_gt0).
 apply: (iffP or3P); rewrite -bounding_polyP;

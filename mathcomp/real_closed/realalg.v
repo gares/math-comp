@@ -937,7 +937,7 @@ Proof.
 rewrite -[x]reprK -[y]reprK eq_sym piE [lt_alg _ _]piE; apply/le_algcrealP/orP.
   move=> /le_creal_neqVlt [/eq_algcrealP/eqquotP/eqP-> //|lt_xy]; first by left.
   by right; apply/lt_algcrealP.
-by move=> [/eqP/eqquotP/eq_algcrealP-> //| /lt_algcrealP /lt_crealW].
+by move=> -[/eqP/eqquotP/eq_algcrealP-> //| /lt_algcrealP /lt_crealW].
 Qed.
 
 Definition AlgNumFieldMixin := RealLtMixin add_alg_gt0 mul_alg_gt0
@@ -1128,7 +1128,7 @@ Lemma pet_algK s i :
    ((pet_alg_poly s)`_i ^ to_alg).[pet_alg s] = s`_i.
 Proof.
 rewrite /pet_alg /pet_alg_poly; case: pet_alg_proof.
-move=> [a sp] /= /forallP hs hsize; have [lt_is|le_si] := ltnP i (size s).
+move=> -[a sp] /= /forallP hs hsize; have [lt_is|le_si] := ltnP i (size s).
   by rewrite -[i]/(val (Ordinal lt_is)); apply/eqP; apply: hs.
 by rewrite !nth_default ?hsize // rmorph0 horner0.
 Qed.
@@ -1176,7 +1176,7 @@ move/eqP; rewrite resultant_eq0 ltn_neqAle eq_sym -coprimep_def.
 move=> /andP[] /(Bezout_coprimepPn _ _) [].
 + by rewrite poly_ground_eq0.
 + by rewrite map_polyC_eq0.
-move=> [u v] /and3P [] /andP [u_neq0 ltn_uq] v_neq0 ltn_vp hpq.
+move=> -[u v] /and3P [] /andP [u_neq0 ltn_uq] v_neq0 ltn_vp hpq.
 rewrite ?size_map_polyC in ltn_uq ltn_vp.
 rewrite ?size_poly_gt0 in u_neq0 v_neq0.
 pose a := pet_alg p.

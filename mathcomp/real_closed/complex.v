@@ -86,7 +86,7 @@ Lemma eq_complex : forall (R : eqType) (x y : complex R),
   (x == y) = (Re x == Re y) && (Im x == Im y).
 Proof.
 move=> R [a b] [c d] /=.
-apply/eqP/andP; first by move=> [-> ->]; split.
+apply/eqP/andP; first by move=> -[-> ->]; split.
 by case; move/eqP->; move/eqP->.
 Qed.
 
@@ -105,10 +105,10 @@ Definition addc (x y : R[i]) := let: a +i* b := x in let: c +i* d := y in
 Definition oppc (x : R[i]) := let: a +i* b := x in (- a) +i* (- b).
 
 Program Definition complex_zmodMixin := @ZmodMixin _ C0 oppc addc _ _ _ _.
-Next Obligation. by move=> [a b] [c d] [e f] /=; rewrite !addrA. Qed.
-Next Obligation. by move=> [a b] [c d] /=; congr (_ +i* _); rewrite addrC. Qed.
-Next Obligation. by move=> [a b] /=; rewrite !add0r. Qed.
-Next Obligation. by move=> [a b] /=; rewrite !addNr. Qed.
+Next Obligation. by move=> -[a b] [c d] [e f] /=; rewrite !addrA. Qed.
+Next Obligation. by move=> -[a b] [c d] /=; congr (_ +i* _); rewrite addrC. Qed.
+Next Obligation. by move=> -[a b] /=; rewrite !add0r. Qed.
+Next Obligation. by move=> -[a b] /=; rewrite !addNr. Qed.
 Canonical complex_zmodType := ZmodType R[i] complex_zmodMixin.
 
 Definition scalec (a : R) (x : R[i]) := 
@@ -116,9 +116,9 @@ Definition scalec (a : R) (x : R[i]) :=
 
 Program Definition complex_lmodMixin := @LmodMixin _ _ scalec _ _ _ _.
 Next Obligation. by move=> a b [c d] /=; rewrite !mulrA. Qed.
-Next Obligation. by move=> [a b] /=; rewrite !mul1r. Qed.
+Next Obligation. by move=> -[a b] /=; rewrite !mul1r. Qed.
 Next Obligation. by move=> a [b c] [d e] /=; rewrite !mulrDr. Qed.
-Next Obligation. by move=> [a b] c d /=; rewrite !mulrDl. Qed.
+Next Obligation. by move=> -[a b] c d /=; rewrite !mulrDl. Qed.
 Canonical complex_lmodType := LmodType R R[i] complex_lmodMixin.
 
 Definition mulc (x y : R[i]) := let: a +i* b := x in let: c +i* d := y in
@@ -126,13 +126,13 @@ Definition mulc (x y : R[i]) := let: a +i* b := x in let: c +i* d := y in
 
 Lemma mulcC : commutative mulc.
 Proof.
-move=> [a b] [c d] /=.
+move=> -[a b] [c d] /=.
 by rewrite [c * b + _]addrC ![_ * c]mulrC ![_ * d]mulrC.
 Qed.
 
 Lemma mulcA : associative mulc.
 Proof.
-move=> [a b] [c d] [e f] /=.
+move=> -[a b] [c d] [e f] /=.
 rewrite !mulrDr !mulrDl !mulrN !mulNr !mulrA !opprD -!addrA.
 by congr ((_ + _) +i* (_ + _)); rewrite !addrA addrAC;
   congr (_ + _); rewrite addrC.
@@ -142,11 +142,11 @@ Definition invc (x : R[i]) := let: a +i* b := x in let n2 := (a ^+ 2 + b ^+ 2) i
   (a / n2) -i* (b / n2).
 
 Lemma mul1c : left_id C1 mulc.
-Proof. by move=> [a b] /=; rewrite !mul1r !mul0r subr0 addr0. Qed.
+Proof. by move=> -[a b] /=; rewrite !mul1r !mul0r subr0 addr0. Qed.
 
 Lemma mulc_addl : left_distributive mulc addc.
 Proof.
-move=> [a b] [c d] [e f] /=; rewrite !mulrDl !opprD -!addrA.
+move=> -[a b] [c d] [e f] /=; rewrite !mulrDl !opprD -!addrA.
 by congr ((_ + _) +i* (_ + _)); rewrite addrCA.
 Qed.
 
@@ -159,7 +159,7 @@ Canonical complex_comRingType := ComRingType R[i] mulcC.
 
 Lemma mulVc : forall x, x != C0 -> mulc (invc x) x = C1.
 Proof.
-move=> [a b]; rewrite eq_complex => /= hab; rewrite !mulNr opprK.
+move=> -[a b]; rewrite eq_complex => /= hab; rewrite !mulNr opprK.
 rewrite ![_ / _ * _]mulrAC [b * a]mulrC subrr complexr0 -mulrDl mulfV //.
 by rewrite paddr_eq0 -!expr2 ?expf_eq0 ?sqr_ge0.
 Qed.
@@ -220,7 +220,7 @@ Notation normC x := (normc x)%:C.
 
 Lemma ltc0_add : forall x y, ltc 0 x -> ltc 0 y -> ltc 0 (x + y).
 Proof.
-move=> [a b] [c d] /= /andP [/eqP-> ha] /andP [/eqP-> hc].
+move=> -[a b] [c d] /= /andP [/eqP-> ha] /andP [/eqP-> hc].
 by rewrite addr0 eqxx addr_gt0.
 Qed.
 
@@ -235,13 +235,13 @@ Lemma eq0_normC x : normC x = 0 -> x = 0. Proof. by case=> /eq0_normc. Qed.
 
 Lemma ge0_lec_total x y : lec 0 x -> lec 0 y -> lec x y || lec y x.
 Proof.
-move: x y => [a b] [c d] /= /andP[/eqP -> a_ge0] /andP[/eqP -> c_ge0].
+move: x y => -[a b] [c d] /= /andP[/eqP -> a_ge0] /andP[/eqP -> c_ge0].
 by rewrite eqxx ler_total.
 Qed.
 
 Lemma normcM x y : normc (x * y) = normc x * normc y.
 Proof.
-move: x y => [a b] [c d] /=; rewrite -sqrtrM ?addr_ge0 ?sqr_ge0 //.
+move: x y => -[a b] [c d] /=; rewrite -sqrtrM ?addr_ge0 ?sqr_ge0 //.
 rewrite sqrrB sqrrD mulrDl !mulrDr -!exprMn.
 rewrite mulrAC [b * d]mulrC !mulrA.
 suff -> : forall (u v w z t : R), (u - v + w) + (z + v + t) = u + w + (z + t).
@@ -253,24 +253,24 @@ Lemma normCM x y : normC (x * y) = normC x * normC y.
 Proof. by rewrite -rmorphM normcM. Qed.
 
 Lemma subc_ge0 x y : lec 0 (y - x) = lec x y.
-Proof. by move: x y => [a b] [c d] /=; simpc; rewrite subr_ge0 subr_eq0. Qed.
+Proof. by move: x y => -[a b] [c d] /=; simpc; rewrite subr_ge0 subr_eq0. Qed.
 
 Lemma lec_def x y : lec x y = (normC (y - x) == y - x).
 Proof.
-rewrite -subc_ge0; move: (_ - _) => [a b]; rewrite eq_complex /= eq_sym.
+rewrite -subc_ge0; case: (_ - _) => [a b]; rewrite eq_complex /= eq_sym.
 have [<- /=|_] := altP eqP; last by rewrite andbF.
 by rewrite [0 ^+ _]mul0r addr0 andbT sqrtr_sqr ger0_def.
 Qed.
 
 Lemma ltc_def x y : ltc x y = (y != x) && lec x y.
 Proof.
-move: x y => [a b] [c d] /=; simpc; rewrite eq_complex /=.
+move: x y => -[a b] [c d] /=; simpc; rewrite eq_complex /=.
 by have [] := altP eqP; rewrite ?(andbF, andbT) //= ltr_def.
 Qed.
 
 Lemma lec_normD x y : lec (normC (x + y)) (normC x + normC y).
 Proof.
-move: x y => [a b] [c d] /=; simpc; rewrite addr0 eqxx /=.
+move: x y => -[a b] [c d] /=; simpc; rewrite addr0 eqxx /=.
 rewrite -(@ler_pexpn2r _ 2) -?topredE /= ?(ler_paddr, sqrtr_ge0) //.
 rewrite [X in _ <= X] sqrrD ?sqr_sqrtr;
    do ?by rewrite ?(ler_paddr, sqrtr_ge0, sqr_ge0, mulr_ge0) //.
@@ -357,10 +357,10 @@ Lemma complexI : injective (real_complex R). Proof. by move=> x y []. Qed.
 Lemma ler0c (x : R) : (0 <= x%:C) = (0 <= x). Proof. by simpc. Qed.
 
 Lemma lecE : forall x y : R[i], (x <= y) = (Im y == Im x) && (Re x <= Re y).
-Proof. by move=> [a b] [c d]. Qed.
+Proof. by move=> -[a b] [c d]. Qed.
 
 Lemma ltcE : forall x y : R[i], (x < y) = (Im y == Im x) && (Re x < Re y).
-Proof. by move=> [a b] [c d]. Qed.
+Proof. by move=> -[a b] [c d]. Qed.
 
 Lemma lecR : forall x y : R, (x%:C <= y%:C) = (x <= y).
 Proof. by move=> x y; simpc. Qed.
@@ -382,11 +382,11 @@ Canonical conjc_additive := Additive conjc_is_rmorphism.
 Canonical conjc_linear := AddLinear conjc_is_scalable.
 
 Lemma conjcK : involutive (@conjc R).
-Proof. by move=> [a b] /=; rewrite opprK. Qed.
+Proof. by move=> -[a b] /=; rewrite opprK. Qed.
 
 Lemma mulcJ_ge0 (x : R[i]) : 0 <= x * x^*%C.
 Proof.
-by move: x=> [a b]; simpc; rewrite mulrC addNr eqxx addr_ge0 ?sqr_ge0.
+by move: x=> -[a b]; simpc; rewrite mulrC addNr eqxx addr_ge0 ?sqr_ge0.
 Qed.
 
 Lemma conjc_real (x : R) : x%:C^* = x%:C.
@@ -407,13 +407,13 @@ by rewrite divff ?mulr1 ?opprK // -natrM pnatr_eq0.
 Qed.
 
 Lemma ger0_Im (x : R[i]) : 0 <= x -> Im x = 0.
-Proof. by move: x=> [a b] /=; simpc => /andP [/eqP]. Qed.
+Proof. by move: x=> -[a b] /=; simpc => /andP [/eqP]. Qed.
 
 (* Todo : extend theory of : *)
 (*   - signed exponents *)
 
 Lemma conj_ge0 : forall x : R[i], (0 <= x ^*) = (0 <= x).
-Proof. by move=> [a b] /=; simpc; rewrite oppr_eq0. Qed.
+Proof. by move=> -[a b] /=; simpc; rewrite oppr_eq0. Qed.
 
 Lemma conjc_nat : forall n, (n%:R : R[i])^* = n%:R.
 Proof. exact: rmorph_nat. Qed.
@@ -425,7 +425,7 @@ Lemma conjc1 : (1 : R[i]) ^* = 1.
 Proof. exact: (conjc_nat 1). Qed.
 
 Lemma conjc_eq0 : forall x : R[i], (x ^* == 0) = (x == 0).
-Proof. by move=> [a b]; rewrite !eq_complex /= eqr_oppLR oppr0. Qed.
+Proof. by move=> -[a b]; rewrite !eq_complex /= eqr_oppLR oppr0. Qed.
 
 Lemma conjc_inv: forall x : R[i], (x^-1)^* = (x^*%C )^-1.
 Proof. exact: fmorphV. Qed.
@@ -580,7 +580,7 @@ Qed.
 Lemma sqrtc_sqrtr :
   forall (x : R[i]), 0 <= x -> sqrtc x = (sqrtr (Re x))%:C.
 Proof.
-move=> [a b] /andP [/eqP->] /= a_ge0.
+move=> -[a b] /andP [/eqP->] /= a_ge0.
 rewrite eqxx mul1r [0 ^+ _]exprS mul0r addr0 sqrtr_sqr.
 rewrite ger0_norm // subrr mul0r sqrtr0 -mulr2n.
 by rewrite -[_*+2]mulr_natr mulfK // pnatr_eq0.
@@ -679,7 +679,7 @@ reflect (exists u_ : I -> 'M_m, A = \sum_(i | P i) u_ i *m B_ i)
   (A <= \sum_(i | P i) <<B_ i>>)%MS.
 Proof.
 apply: (iffP idP); last first.
-  by move=> [u_ ->]; rewrite summx_sub_sums // => i _; rewrite genmxE submxMl.
+  by move=> -[u_ ->]; rewrite summx_sub_sums // => i _; rewrite genmxE submxMl.
 move=> /sub_sumsmxP [u_ hA].
 have Hu i : exists v, u_ i *m  <<B_ i>>%MS = v *m B_ i.
   by apply/submxP; rewrite (submx_trans (submxMl _ _)) ?genmxE.
@@ -725,7 +725,7 @@ rewrite eq_mviE xpair_eqE -!val_eqE /= eq_sym andbb.
 rewrite ltn_eqF // subr0 mulr1 summxE big1.
   rewrite [w as X in X *m _]mx11_scalar => ->.
   by rewrite mul_scalar_mx scale0r submx0.
-move=> [i' j'] /= /andP[lt_j'i'].
+move=> -[i' j'] /= /andP[lt_j'i'].
 rewrite xpair_eqE /= => neq'_ij.
 rewrite /= !mxvec_delta !mxE big_ord1 !mxE !eqxx !eq_mviE.
 rewrite !xpair_eqE /= [_ == i']eq_sym [_ == j']eq_sym (negPf neq'_ij) /=.
@@ -738,7 +738,7 @@ Lemma rank_skew : \rank skew = (n * n.-1)./2.
 Proof.
 rewrite /skew (mxdirectP _) //= -bin2 -triangular_sum big_mkord.
 rewrite (eq_bigr (fun _ => 1%N)); last first.
-  move=> [i j] /= lt_ij; rewrite genmxE.
+  move=> -[i j] /= lt_ij; rewrite genmxE.
   apply/eqP; rewrite eqn_leq rank_leq_row /= lt0n mxrank_eq0.
   rewrite /skew_vec /= !mxvec_delta /= subr_eq0.
   set j1 := mxvec_index _ _.
@@ -788,9 +788,9 @@ rewrite (bigID (fun ij => (ij.2 : 'I__) < (ij.1 : 'I__))%N) /=; congr (_ + _).
   by rewrite !linearZ linearB /= ?mxvecK trmx_delta scalerN scalerBr.
 rewrite (bigID (fun ij => (ij.1 : 'I__) == (ij.2 : 'I__))%N) /=.
 rewrite big1 ?add0r; last first.
-  by move=> [i j] /= /andP[_ /eqP ->]; rewrite linearZ /= trmx_delta subrr.
+  by move=> -[i j] /= /andP[_ /eqP ->]; rewrite linearZ /= trmx_delta subrr.
 rewrite (@reindex_inj _ _ _ _ (fun ij => (ij.2, ij.1))) /=; last first.
-  by move=> [? ?] [? ?] [] -> ->.
+  by move=> -[? ?] [? ?] [] -> ->.
 apply: eq_big => [] [i j] /=; first by rewrite -leqNgt ltn_neqAle andbC.
 by rewrite !linearZ linearB /= ?mxvecK trmx_delta scalerN scalerBr.
 Qed.
@@ -807,7 +807,7 @@ Lemma companion_subproof (p : {poly K}) :
   {M : 'M[K]_((size p).-1)| p \is monic -> char_poly M = p}.
 Proof.
 have simp := (castmxE, mxE, castmx_id, cast_ord_id).
-case Hsp: (size p) => [|sp] /=.
+case Hsp: (size p) => [|sp] /=. 
   move/eqP: Hsp; rewrite size_poly_eq0 => /eqP ->.
   by exists 0; rewrite qualifE lead_coef0 eq_sym oner_eq0.
 case: sp => [|sp] in Hsp *.
@@ -820,7 +820,7 @@ exists (castmx (erefl _, addn1n _)
 elim/poly_ind: p sp Hsp (addn1n _) => [|p c IHp] sp; first by rewrite size_poly0.
 rewrite size_MXaddC.
 have [->|p_neq0] //= := altP eqP; first by rewrite size_poly0; case: ifP.
-move=> [Hsp] eq_cast.
+move=> -[Hsp] eq_cast.
 rewrite monicE lead_coefDl ?size_polyC ?size_mul ?polyX_eq0 //; last first.
   by rewrite size_polyX addn2 Hsp ltnS (leq_trans (leq_b1 _)).
 rewrite lead_coefMX -monicE => p_monic.
@@ -1083,7 +1083,7 @@ Lemma Lemma5 : Eigen1Vec R[i] 2.
 Proof.
 move=> m V HrV f f_stabV.
 suff: exists a, eigenvalue (restrict V f) a.
-  by move=> [a /eigenvalue_restrict Hf]; exists a; apply: Hf.
+  by move=> -[a /eigenvalue_restrict Hf]; exists a; apply: Hf.
 move: (\rank V) (restrict V f) => {f f_stabV V m} n f in HrV *.
 pose u := map_mx (@Re R) f; pose v := map_mx (@Im R) f.
 have fE : f = MtoC u + 'i%C *: MtoC v.
@@ -1123,7 +1123,7 @@ have [] := @Lemma4 _ _ 1%:M _ [::L1; L2] (erefl _).
   by rewrite addrC [X in X + _ = _]addrACA [X in _ + X = _]addrACA.
 move=> g g_neq0 Hg; have [] := (Hg L1, Hg L2).
 rewrite !(mem_head, in_cons, orbT) => [].
-move=> [//|a /eigenspaceP g_eigenL1] [//|b /eigenspaceP g_eigenL2].
+move=> -[//|a /eigenspaceP g_eigenL1] [//|b /eigenspaceP g_eigenL2].
 rewrite !mul_rV_lin /= /L1fun /L2fun /= in g_eigenL1 g_eigenL2.
 do [move=> /(congr1 vec_mx); rewrite mxvecK linearZ /=] in g_eigenL1.
 do [move=> /(congr1 vec_mx); rewrite mxvecK linearZ /=] in g_eigenL2.
@@ -1167,7 +1167,7 @@ apply: Lemma3 => m V Hn f f_stabV {r}.
 have [dvd2n|Ndvd2n] := boolP (2 %| \rank V); last first.
   exact: @Lemma5 _ _ Ndvd2n _ f_stabV.
 suff: exists a, eigenvalue (restrict V f) a.
-  by move=> [a /eigenvalue_restrict Hf]; exists a; apply: Hf.
+  by move=> -[a /eigenvalue_restrict Hf]; exists a; apply: Hf.
 case: (\rank V) (restrict V f) => {f f_stabV V m} [|n] f in Hn dvd2n *.
   by rewrite dvdn0 in Hn.
 pose L1 := lin_mx [linear of mulmxr f \+ (mulmx f^T)].
@@ -1213,7 +1213,7 @@ have: exists2 w : 'M_n.+1, w != 0 & exists a, (w <= eigenspace f a)%MS.
     by rewrite -mul_mx_scalar -subr_eq0 -mulmxBr -/w w_eq0.
   exists w => //; exists r2; apply/eigenspaceP/eqP.
   by rewrite -mul_mx_scalar -subr_eq0 -mulmxBr r2_eigen.
-move=> [w w_neq0 [a /(submx_trans (nz_row_sub _)) /eigenspaceP Hw]].
+move=> -[w w_neq0 [a /(submx_trans (nz_row_sub _)) /eigenspaceP Hw]].
 by exists a; apply/eigenvalueP; exists (nz_row w); rewrite ?nz_row_eq0.
 Qed.
 

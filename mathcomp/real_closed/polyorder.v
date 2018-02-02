@@ -142,8 +142,8 @@ Proof.
 move=>hpqn0; apply/eqP; rewrite eq_sym -muP//.
 rewrite exprD dvdp_mul ?root_mu//=.
 move:hpqn0; rewrite mulf_eq0 negb_or; case/andP=> hp0 hq0.
-move: (mu_spec x hp0)=> [qp qp0 hp].
-move: (mu_spec x hq0)=> [qq qq0 hq].
+move: (mu_spec x hp0)=> -[qp qp0 hp].
+move: (mu_spec x hq0)=> -[qq qq0 hq].
 rewrite {2}hp {2}hq exprS exprD !mulrA [qp * _ * _]mulrAC.
 rewrite !dvdp_mul2r ?expf_neq0 ?polyXsubC_eq0 // -eqp_div_XsubC.
 move: (mulf_neq0 qp0 qq0); rewrite -hornerM; apply: contra; move/eqP->.

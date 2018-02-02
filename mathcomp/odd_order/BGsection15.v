@@ -857,7 +857,7 @@ have [eqHMs | neqHMs] := eqVneq H M`_\sigma.
 pose q := #|'C_(M`_\sigma)(K)|; pose Q := 'O_q(M).
 have [D hallD] := Hall_exists q^' (solvableS sMsM (mmax_sol maxM)).
 case/(_ K D): nnil_struct => //=; rewrite -/H -/q -/Q.
-move=> [_ _ defMs] [_ _ piHq _] [sylQ nilD _] _ [_ -> [defF_Q _ _] _].
+move=> -[_ _ defMs] [_ _ piHq _] [sylQ nilD _] _ [_ -> [defF_Q _ _] _].
 have sQH: Q \subset H by rewrite -[Q](p_core_Fcore piHq) pcore_sub.
 split=> //; rewrite -?{}defMs; split=> //.
   by rewrite defF_H // -defF_Q joingC sub_gen // subsetU ?setIS ?centS.

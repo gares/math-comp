@@ -538,7 +538,7 @@ Lemma dual_coherence S tau R nu :
     subcoherent S tau R -> coherent_with S L^# tau nu -> (size S <= 2)%N ->
   coherent_with S L^# tau (dual_iso nu).
 Proof.
-move=> [[charS nrS ccS] _ oSS _ _] [[Inu Znu] Dnu] szS2.
+move=> -[[charS nrS ccS] _ oSS _ _] [[Inu Znu] Dnu] szS2.
 split=> [|{Inu Znu oSS} phi ZSphi].
   have{oSS} ccZS := cfAut_zchar ccS.
   have vcharS: {subset S <= 'Z[irr L]} by move=> phi /charS/char_vchar.
@@ -566,7 +566,7 @@ Lemma coherent_seqInd_conjCirr S tau R nu r :
   [/\ {subset map nu chi2 <= 'Z[irr G]}, orthonormal (map nu chi2),
       chi - chi^*%CF \in 'Z[S, L^#] & (nu chi - nu chi^*)%CF 1%g == 0].
 Proof.
-move=> [[charS nrS ccS] [_ Ztau] oSS _ _] [[Inu Znu] Dnu] chi chi2 Schi.
+move=> -[[charS nrS ccS] [_ Ztau] oSS _ _] [[Inu Znu] Dnu] chi chi2 Schi.
 have sSZ: {subset S <= 'Z[S]} by apply: mem_zchar. 
 have vcharS: {subset S <= 'Z[irr L]} by move=> phi /charS/char_vchar.
 have Schi2: {subset chi2 <= 'Z[S]} by apply/allP; rewrite /= !sSZ ?ccS.
@@ -893,7 +893,7 @@ Lemma subcoherent_norm chi psi (tau1 : {additive 'CF(L) -> 'CF(G)}) X Y :
              & exists2 E, subseq E (R chi) & X = \sum_(xi <- E) xi]].
 Proof.
 case=> Schi Zpsi /and3P[/andP[/eqP-ochi_psi _] /andP[/eqP-ochic_psi _] _] S0.
-move=> [Itau1 Ztau1] tau1dchi [defXY oXY oYR].
+move=> -[Itau1 Ztau1] tau1dchi [defXY oXY oYR].
 have [[ZS nrS ccS] [tS Zt] oS /(_ _ Schi)[ZR o1R tau_dchi] _] := cohS.
 have [/=/andP[S'0 uS] oSS] := pairwise_orthogonalP oS.
 have [nRchi Schic] := (hasPn nrS _ Schi, ccS _ Schi).

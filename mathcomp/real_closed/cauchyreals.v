@@ -286,7 +286,7 @@ Definition strong_mono p (a r : F) := (accr_pos p a r + accr_neg p a r)%type.
 Lemma accr_pos_incr p a r : accr_pos p a r ->
   forall x y, `|x - a| <= r -> `|y - a| <= r -> (p.[x] <= p.[y]) = (x <= y).
 Proof.
-move=> [[k k_gt0 hk] _] x y hx hy.
+move=> -[[k k_gt0 hk] _] x y hx hy.
 have [->|neq_xy] := eqVneq x y; first by rewrite !lerr.
 have hkxy := hk _ _ neq_xy hx hy.
 have := ltr_trans k_gt0 hkxy.
@@ -299,7 +299,7 @@ Qed.
 Lemma accr_neg_decr p a r : accr_neg p a r ->
   forall x y, `|x - a| <= r -> `|y - a| <= r -> (p.[x] <= p.[y]) = (y <= x).
 Proof.
-move=> [] [k]; rewrite -oppr_lt0=> Nk_lt0 hk _ x y hx hy.
+move=> -[] [k]; rewrite -oppr_lt0=> Nk_lt0 hk _ x y hx hy.
 have [->|neq_xy] := eqVneq x y; first by rewrite !lerr.
 have hkxy := hk _ _ neq_xy hx hy.
 have := ltr_trans hkxy  Nk_lt0.
@@ -383,7 +383,7 @@ move=> r1_gt0 r2_gt0 har sm1; wlog : p sm1 / accr_pos p a1 r1.
   apply: hwlog=> //; do ?exact: strong_monoN.
   exact: accr_posN.
 case=> [[k1 k1_gt0 hk1]] h1.
-move=> [] accr2_p; last first.
+move=> -[] accr2_p; last first.
   set m := (r2 * a1 + r1 * a2) / (r1 + r2).
   have pm_gt0 := h1 m.
   case: accr2_p=> [_] /(_ m) pm_lt0.

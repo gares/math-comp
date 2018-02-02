@@ -318,7 +318,7 @@ pose d j : algC := (-1) ^+ (dmu j).1.
 have{Ddmu} Ddmu i j: 'Ind (ew_ i j) = d j *: (mu i j - mu 0 j).
   by rewrite Ddmu scalerBr.
 have{injl_mu} inj_Imu: injective Imu.
-  move=> [i1 j1] [i2 j2]; rewrite /Imu /=; pose S i j k := mu i j :: mu k j.
+  move=> -[i1 j1] [i2 j2]; rewrite /Imu /=; pose S i j k := mu i j :: mu k j.
   have [-> /injl_mu-> // | j2'1 /eqP/negPf[] /=] := eqVneq j1 j2.
   apply/(can_inj oddb)/eqP; rewrite -eqC_nat -cfdot_irr -!/(mu _ _) mulr0n.
   have oIew_j12 i k: '['Ind[L] (ew_ i j1), 'Ind[L] (ew_ k j2)] = 0.
@@ -343,7 +343,7 @@ have V2basis: basis_of 'CF(W, W :\: W2) V2base.
     rewrite cardsD (setIidPr _) //  (dprod_card defW) leqnn andbT.
     by apply/span_subvP=> _ /mapP[ij _ ->].
   apply/freeP=> /= z zV2e0 k.
-  move Dk: (enum_val k) (enum_valP k) => [i j] /andP[/= nz_i _].
+  case Dk: (enum_val k) (enum_valP k) => [i j] /andP[/= nz_i _].
   rewrite -(cfdot0l (w_ i j)) -{}zV2e0 cfdot_suml (bigD1 k) //= cfdotZl.
   rewrite nth_image Dk cfdotBl !cfdot_w !eqxx eq_sym (negPf nz_i) subr0 mulr1.
   rewrite big1 ?addr0 // => k1; rewrite -(inj_eq enum_val_inj) {}Dk nth_image.

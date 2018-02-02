@@ -763,13 +763,13 @@ rewrite map_cat /= mem_cat -!map_comp; set f := fun _ => _.
 rewrite -/f in ih; case/orP.
   case/mapP=> [[y1 y2]] yin ye.
   move: (ih eq1 lt1 (f (y1, y2))); rewrite mem_map //; last first.
-    by move=> [u1 u2] [v1 v2]; rewrite /f /=; case=> -> ->.
+    by move=> -[u1 u2] [v1 v2]; rewrite /f /=; case=> -> ->.
   move/(_ yin); move: ye; rewrite /f /=; case=> -> -> -> -> /= h.
   move=> u; rewrite in_cons (h u) !mem_cat in_cons.
   by rewrite orbC !orbA; set x := _ || (u \in lt1); rewrite orbAC.
 case/mapP=> [[y1 y2]] yin ye.
 move: (ih eq1 lt1 (f (y1, y2))); rewrite mem_map //; last first.
-  by move=> [u1 u2] [v1 v2]; rewrite /f /=; case=> -> ->.
+  by move=> -[u1 u2] [v1 v2]; rewrite /f /=; case=> -> ->.
 move/(_ yin); move: ye; rewrite /f /=; case=> -> -> -> -> /= h u.
 rewrite !mem_cat !in_cons orbA orbCA -!orbA; move: (h u); rewrite !mem_cat=> ->.
 by rewrite orbC !orbA; set x := _ || (u \in lt1); rewrite orbAC.
@@ -1014,7 +1014,7 @@ have : forall oc, oc \in (oclause_neq_elim t1) -> oc.2 = [::] /\ oc.4 = [::].
   move=> oc hoc; move/oclause_neq_elim2: (hoc); case/andP=> /eqP -> /eqP ->.
   by move/eqP: (h4 _ (mem_head _ _))->.
 elim: (oclause_neq_elim t1) => [| [teq1 tneq1 tleq1 tlt1] l2 ih2] h24 //=.
-rewrite /w_to_oclause /=; move: (h24 _ (mem_head _ _ ))=> /= [] -> ->.
+rewrite /w_to_oclause /=; move: (h24 _ (mem_head _ _ ))=> /= -[] -> ->.
 by congr (_ :: _); apply: ih2 => oc hoc; apply: h24; rewrite in_cons hoc orbT.
 Qed.
 

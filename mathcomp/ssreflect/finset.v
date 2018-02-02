@@ -1548,7 +1548,7 @@ Proof.
 apply/setP/subset_eqP/andP.
 split; apply/subsetP=> _ /imsetP[x0 Hx0 ->]; apply/imsetP.
   by exists (g x0); first apply: mem_imset.
-by move/imsetP: Hx0 => [x1 Hx1 ->]; exists x1.
+by move/imsetP: Hx0 => -[x1 Hx1 ->]; exists x1.
 Qed.
 
 End FunImageComp.

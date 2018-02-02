@@ -2116,7 +2116,7 @@ Qed.
 Lemma coprimep_root p q x : coprimep p q -> root p x -> q.[x] != 0.
 Proof.
 case/Bezout_coprimepP=> [[u v] euv] px0.
-move/eqpP: euv => [[c1 c2]] /andP /= [c1n0 c2n0 e].
+move/eqpP: euv => -[[c1 c2]] /andP /= [c1n0 c2n0 e].
 suffices: c1 * (v.[x] * q.[x]) != 0.
   by rewrite !mulf_eq0 !negb_or c1n0 /=; case/andP.
 move/(f_equal (fun t => horner t x)): e; rewrite /= !hornerZ hornerD.
@@ -2125,7 +2125,7 @@ Qed.
 
 Lemma Gauss_dvdpl p q d: coprimep d q -> (d %| p * q) = (d %| p).
 Proof.
-move/Bezout_coprimepP=>[[u v] Puv]; apply/idP/idP; last exact: dvdp_mulr.
+move/Bezout_coprimepP=>-[[u v] Puv]; apply/idP/idP; last exact: dvdp_mulr.
 move:Puv; move/(eqp_mull p); rewrite mulr1 mulrDr eqp_sym=> peq dpq.
 rewrite (eqp_dvdr _  peq) dvdp_addr; first by rewrite mulrA mulrAC dvdp_mulr.
 by rewrite mulrA dvdp_mull ?dvdpp.
@@ -2207,7 +2207,7 @@ Lemma gcdp_mul2l p q r : gcdp (p * q) (p * r) %= (p * gcdp q r).
 Proof.
 case: (eqVneq p 0)=> [->|hp]; first by rewrite !mul0r gcdp0 eqpxx.
 rewrite /eqp !dvdp_gcd !dvdp_mul2l // dvdp_gcdr dvdp_gcdl !andbT.
-move: (Bezoutp q r) => [[u v]] huv.
+move: (Bezoutp q r) => -[[u v]] huv.
 rewrite eqp_sym in huv; rewrite (eqp_dvdr _ (eqp_mull _ huv)).
 rewrite mulrDr ![p * (_ * _)]mulrCA.
 by apply: dvdp_add; rewrite dvdp_mull// (dvdp_gcdr, dvdp_gcdl).

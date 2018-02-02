@@ -75,7 +75,7 @@ Ltac inj_tac :=
   move: (erefl rot_inv); unfold rot_inv;
   match goal with |- ?X = _ -> injective ?Y =>
     move=> _; let x := get_inv Y X in
-    apply: (can_inj (g:=x)); move => [val H1]
+    apply: (can_inj (g:=x)); move => -[val H1]
   end.
 
 Lemma R1_inj :  injective R1.

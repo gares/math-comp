@@ -73,7 +73,7 @@ Lemma coprime_num_den x : coprime `|numq x| `|denq x|.
 Proof. by rewrite /numq /denq; case: x=> [[a b] /= /andP []]. Qed.
 
 Fact RatK x P : @Rat (numq x, denq x) P = x.
-Proof. by move:x P => [[a b] P'] P; apply: val_inj. Qed.
+Proof. by move:x P => -[[a b] P'] P; apply: val_inj. Qed.
 
 Fact fracq_subproof : forall x : int * int,
   let n :=
@@ -82,12 +82,12 @@ Fact fracq_subproof : forall x : int * int,
   let d := if x.2 == 0 then 1 else (`|x.2| %/ gcdn `|x.1| `|x.2|)%:Z in
   (0 < d) && (coprime `|n| `|d|).
 Proof.
-move=> [m n] /=; case: (altP (n =P 0))=> [//|n0].
+move=> -[m n] /=; case: (altP (n =P 0))=> [//|n0].
 rewrite ltz_nat divn_gt0 ?gcdn_gt0 ?absz_gt0 ?n0 ?orbT //.
 rewrite dvdn_leq ?absz_gt0 ?dvdn_gcdr //= !abszM absz_sign mul1n.
 have [->|m0] := altP (m =P 0); first by rewrite div0n gcd0n divnn absz_gt0 n0.
 move: n0 m0; rewrite -!absz_gt0 absz_nat.
-move: `|_|%N `|_|%N => {m n} [|m] [|n] // _ _.
+move: `|_|%N `|_|%N => {m n} -[|m] [|n] // _ _.
 rewrite /coprime -(@eqn_pmul2l (gcdn m.+1 n.+1)) ?gcdn_gt0 //.
 rewrite muln_gcdr; do 2!rewrite muln_divCA ?(dvdn_gcdl, dvdn_gcdr) ?divnn //.
 by rewrite ?gcdn_gt0 ?muln1.
@@ -100,7 +100,7 @@ Proof. by apply: val_inj; rewrite /= gcdn1 !divn1 abszE mulr_sign_norm. Qed.
 
 Fact valqK x : fracq (valq x) = x.
 Proof.
-move:x => [[n d] /= Pnd]; apply: val_inj=> /=.
+move:x => -[[n d] /= Pnd]; apply: val_inj=> /=.
 move: Pnd; rewrite /coprime /fracq /=; case/andP=> hd; move/eqP=> hnd.
 by rewrite ltr_gtF ?gtr_eqF //= hnd !divn1 mulz_sign_abs abszE gtr0_norm.
 Qed.
@@ -195,7 +195,7 @@ Qed.
 
 Fact fracq_eq0 x : (fracq x == zeroq) = (x.1 == 0) || (x.2 == 0).
 Proof.
-move: x=> [n d] /=; have [->|d0] := altP (d =P 0).
+move: x=> -[n d] /=; have [->|d0] := altP (d =P 0).
   by rewrite fracq0 eqxx orbT.
 by rewrite orbF fracq_eq ?d0 //= mulr1 mul0r.
 Qed.
@@ -407,7 +407,7 @@ Proof. by rewrite -ratzE /ratz rat_eqE /numq /denq /= mulr0 eqxx andbT. Qed.
 (* fracq should never appear, its canonical form is _%:Q / _%:Q *)
 Lemma fracqE x : fracq x = x.1%:Q / x.2%:Q.
 Proof.
-move:x => [m n] /=.
+move:x => -[m n] /=.
 case n0: (n == 0); first by rewrite (eqP n0) fracq0 rat0 invr0 mulr0.
 rewrite -[m%:Q]valqK -[n%:Q]valqK.
 rewrite [_^-1]invq_frac ?(denq_neq0, numq_eq0, n0, intq_eq0) //.

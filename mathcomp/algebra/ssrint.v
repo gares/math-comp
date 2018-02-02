@@ -131,18 +131,18 @@ CoInductive int_spec (x : int) : int -> Type :=
 | ZintPos n of x = n.+1 : int_spec x n.+1
 | ZintNeg n of x = - (n.+1)%:Z : int_spec x (- n.+1).
 
-Lemma intP x : int_spec x x. Proof. by move: x=> [] []; constructor. Qed.
+Lemma intP x : int_spec x x. Proof. by move: x=> -[] []; constructor. Qed.
 
 Lemma addzC : commutative addz.
-Proof. by move=> [] m [] n //=; rewrite addnC. Qed.
+Proof. by move=> -[] m [] n //=; rewrite addnC. Qed.
 
-Lemma add0z : left_id 0 addz. Proof. by move=> [] [|]. Qed.
+Lemma add0z : left_id 0 addz. Proof. by move=> -[] [|]. Qed.
 
 Lemma oppzK : involutive oppz. Proof. by do 2?case. Qed.
 
 Lemma oppz_add : {morph oppz : m n / m + n}.
 Proof.
-move=> [[|n]|n] [[|m]|m] /=; rewrite ?NegzE ?oppzK ?addnS ?addn0 ?subn0 //;
+move=> -[[|n]|n] [[|m]|m] /=; rewrite ?NegzE ?oppzK ?addnS ?addn0 ?subn0 //;
   rewrite ?ltnS[m <= n]leqNgt [n <= m]leqNgt; case: ltngtP=> hmn /=;
     by rewrite ?hmn ?subnn // ?oppzK ?subSS ?subnS ?prednK // ?subn_gt0.
 Qed.
@@ -157,7 +157,7 @@ Qed.
 
 Lemma addSnz (m : nat) (n : int) : (m.+1%N) + n = 1 + (m + n).
 Proof.
-move: m n=> [|m] [] [|n] //=; rewrite ?add1n ?subn1 // !(ltnS, subSS).
+move: m n=> -[|m] [] [|n] //=; rewrite ?add1n ?subn1 // !(ltnS, subSS).
 rewrite [n <= m]leqNgt; case: ltngtP=> hmn /=; rewrite ?hmn ?subnn //.
   by rewrite subnS add1n prednK ?subn_gt0.
 by rewrite ltnS leqn0 subn_eq0 leqNgt hmn /= subnS subn1.
@@ -222,7 +222,7 @@ CoInductive int_spec (x : int) : int -> Type :=
 | ZintNeg n : int_spec x (- (n.+1)%:Z).
 
 Lemma intP x : int_spec x x.
-Proof. by move: x=> [] [] *; rewrite ?NegzE; constructor. Qed.
+Proof. by move: x=> -[] [] *; rewrite ?NegzE; constructor. Qed.
 
 Definition oppz_add := (@opprD [zmodType of int]).
 
@@ -259,7 +259,7 @@ Lemma mul0z : left_zero 0 *%Z.
 Proof. by case=> [n|[|n]] //=; rewrite muln0. Qed.
 
 Lemma mulzC : commutative mulz.
-Proof. by move=> [] m [] n //=; rewrite mulnC. Qed.
+Proof. by move=> -[] m [] n //=; rewrite mulnC. Qed.
 
 Lemma mulz0 : right_zero 0 *%Z.
 Proof. by move=> x; rewrite mulzC mul0z. Qed.
@@ -275,7 +275,7 @@ Proof. by rewrite mulzC mulzN mulzC. Qed.
 
 Lemma mulzA : associative mulz.
 Proof.
-by move=> [] m [] n [] p; rewrite ?NegzE ?(mulnA,mulNz,mulzN,opprK) //= ?mulnA.
+by move=> -[] m [] n [] p; rewrite ?NegzE ?(mulnA,mulNz,mulzN,opprK) //= ?mulnA.
 Qed.
 
 Lemma mul1z : left_id 1%Z mulz.
@@ -390,24 +390,24 @@ Definition ltz m n :=
 
 Fact lez_norm_add x y : lez (normz (x + y)) (normz x + normz y).
 Proof.
-move: x y=> [] m [] n; rewrite /= ?addnS //=;
+move: x y=> -[] m [] n; rewrite /= ?addnS //=;
 rewrite /GRing.add /GRing.Zmodule.add /=; case: ltnP=> //=;
 rewrite ?addSn ?ltnS ?leq_subLR ?(addnS, addSn) ?(leq_trans _ (leqnSn _)) //;
 by rewrite 1?addnCA ?leq_addr ?addnA ?leq_addl.
 Qed.
 
 Fact ltz_add x y : ltz 0 x -> ltz 0 y -> ltz 0 (x + y).
-Proof. by move: x y => [] x [] y //= hx hy; rewrite ltn_addr. Qed.
+Proof. by move: x y => -[] x [] y //= hx hy; rewrite ltn_addr. Qed.
 
 Fact eq0_normz x : normz x = 0 -> x = 0. Proof. by case: x. Qed.
 
 Fact lez_total x y : lez x y || lez y x.
-Proof. by move: x y => [] x [] y //=; apply: leq_total. Qed.
+Proof. by move: x y => -[] x [] y //=; apply: leq_total. Qed.
 
 Lemma abszN (n : nat) : absz (- n%:Z) = n. Proof. by case: n. Qed.
 
 Fact normzM : {morph (fun n => normz n) : x y / x * y}.
-Proof. by move=> [] x [] y; rewrite // abszN // mulnC. Qed.
+Proof. by move=> -[] x [] y; rewrite // abszN // mulnC. Qed.
 
 Lemma subz_ge0 m n : lez 0 (n - m) = lez m n.
 Proof.
@@ -419,11 +419,11 @@ by [ rewrite subzn //
 Qed.
 
 Fact lez_def x y : (lez x y) = (normz (y - x) == y - x).
-Proof. by rewrite -subz_ge0; move: (_ - _) => [] n //=; rewrite eqxx. Qed.
+Proof. by rewrite -subz_ge0; move: (_ - _) => -[] n //=; rewrite eqxx. Qed.
 
 Fact ltz_def x y : (ltz x y) = (y != x) && (lez x y).
 Proof.
-by move: x y=> [] x [] y //=; rewrite (ltn_neqAle, leq_eqVlt) // eq_sym.
+by move: x y=> -[] x [] y //=; rewrite (ltn_neqAle, leq_eqVlt) // eq_sym.
 Qed.
 
 Definition Mixin :=
@@ -453,15 +453,15 @@ Definition ltez_nat := (lez_nat, ltz_nat).
 Lemma leNz_nat m n : (- m%:Z <= n). Proof. by case: m. Qed.
 
 Lemma ltNz_nat m n : (- m%:Z < n) = (m != 0%N) || (n != 0%N).
-Proof. by move: m n=> [|?] []. Qed.
+Proof. by move: m n=> -[|?] []. Qed.
 
 Definition lteNz_nat := (leNz_nat, ltNz_nat).
 
 Lemma lezN_nat m n : (m%:Z <= - n%:Z) = (m == 0%N) && (n == 0%N).
-Proof. by move: m n=> [|?] []. Qed.
+Proof. by move: m n=> -[|?] []. Qed.
 
 Lemma ltzN_nat m n : (m%:Z < - n%:Z) = false.
-Proof. by move: m n=> [|?] []. Qed.
+Proof. by move: m n=> -[|?] []. Qed.
 
 Lemma le0z_nat n : 0 <= n :> int. Proof. by []. Qed.
 
@@ -1218,14 +1218,14 @@ Definition exprz_gte0 := (exprz_ge0, exprz_gt0).
 Lemma ler_wpiexpz2l x (x0 : 0 <= x) (x1 : x <= 1) :
   {in >= 0 &, {homo (exprz x) : x y /~ x <= y}}.
 Proof.
-move=> [] m [] n; rewrite -!topredE /= ?oppr_cp0 ?ltz_nat // => _ _.
+move=> -[] m [] n; rewrite -!topredE /= ?oppr_cp0 ?ltz_nat // => _ _.
 by rewrite lez_nat -?exprnP=> /ler_wiexpn2l; apply.
 Qed.
 
 Lemma ler_wniexpz2l x (x0 : 0 <= x) (x1 : x <= 1) :
   {in < 0 &, {homo (exprz x) : x y /~ x <= y}}.
 Proof.
-move=> [] m [] n; rewrite ?NegzE -!topredE /= ?oppr_cp0 ?ltz_nat // => _ _.
+move=> -[] m [] n; rewrite ?NegzE -!topredE /= ?oppr_cp0 ?ltz_nat // => _ _.
 rewrite ler_opp2 lez_nat -?invr_expz=> hmn; move: (x0).
 rewrite le0r=> /orP [/eqP->|lx0]; first by rewrite !exp0rz invr0.
 by rewrite lef_pinv -?topredE /= ?exprz_gt0 // ler_wiexpn2l.
@@ -1234,7 +1234,7 @@ Qed.
 Fact ler_wpeexpz2l x (x1 : 1 <= x) :
   {in >= 0 &, {homo (exprz x) : x y / x <= y}}.
 Proof.
-move=> [] m [] n; rewrite -!topredE /= ?oppr_cp0 ?ltz_nat // => _ _.
+move=> -[] m [] n; rewrite -!topredE /= ?oppr_cp0 ?ltz_nat // => _ _.
 by rewrite lez_nat -?exprnP=> /ler_weexpn2l; apply.
 Qed.
 
@@ -1717,7 +1717,7 @@ Proof. by move=> p [] n i; rewrite ?NegzE (coefMNn, coefMn). Qed.
 
 Lemma polyC_mulrz : forall n, {morph (@polyC R) : c / c *~ n}.
 Proof.
-move=> [] n c; rewrite ?NegzE -?pmulrn ?polyC_muln //.
+move=> -[] n c; rewrite ?NegzE -?pmulrn ?polyC_muln //.
 by rewrite polyC_opp mulrNz polyC_muln nmulrn.
 Qed.
 
@@ -1728,7 +1728,7 @@ Lemma horner_int : forall n x, (n%:~R : {poly R}).[x] = n%:~R.
 Proof. by move=> n x; rewrite hornerMz hornerC. Qed.
 
 Lemma derivMz : forall n p, (p *~ n)^`() = p^`() *~ n.
-Proof. by move=> [] n p; rewrite ?NegzE -?pmulrn (derivMn, derivMNn). Qed.
+Proof. by move=> -[] n p; rewrite ?NegzE -?pmulrn (derivMn, derivMNn). Qed.
 
 End PolyZintRing.
 

@@ -105,7 +105,7 @@ Proof. by move=> x y; rewrite /equivf eq_sym; congr (_==_); rewrite mulrC. Qed.
 
 Lemma equivf_trans : transitive equivf.
 Proof.
-move=> [x Px] [y Py] [z Pz]; rewrite /equivf /= mulrC => /eqP xy /eqP yz.
+move=> -[x Px] [y Py] [z Pz]; rewrite /equivf /= mulrC => /eqP xy /eqP yz.
 by rewrite -(inj_eq (mulfI Px)) mulrA xy -mulrA yz mulrCA.
 Qed.
 

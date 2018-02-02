@@ -283,8 +283,8 @@ Lemma mx_rsim_dadd  (U V W : 'M_n) (rU rV : representation)
 Proof.
 case: rU; case: rV=> nV rV nU rU defW dxUV /=.
 have tiUV := mxdirect_addsP dxUV.
-move=> [fU def_nU]; rewrite -{nU}def_nU in rU fU * => inv_fU hom_fU.
-move=> [fV def_nV]; rewrite -{nV}def_nV in rV fV * => inv_fV hom_fV.
+move=> -[fU def_nU]; rewrite -{nU}def_nU in rU fU * => inv_fU hom_fU.
+move=> -[fV def_nV]; rewrite -{nV}def_nV in rV fV * => inv_fV hom_fV.
 pose pU := in_submod U (proj_mx U V) *m fU.
 pose pV := in_submod V (proj_mx V U) *m fV.
 exists (val_submod 1%:M *m row_mx pU pV) => [||g Gg].
@@ -2036,7 +2036,7 @@ Proof. by rewrite dprod_IirrE /cfDprod irr0 rmorph1 mul1r. Qed.
 
 Lemma dprod_Iirr_inj : injective dprod_Iirr.
 Proof.
-move=> [i1 j1] [i2 j2] /eqP; rewrite -[_ == _]oddb -(natCK (_ == _)).
+move=> -[i1 j1] [i2 j2] /eqP; rewrite -[_ == _]oddb -(natCK (_ == _)).
 rewrite -cfdot_irr !dprod_IirrE cfdot_dprod !cfdot_irr -natrM mulnb.
 by rewrite natCK oddb -xpair_eqE => /eqP.
 Qed.

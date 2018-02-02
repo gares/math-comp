@@ -37,7 +37,7 @@ Qed.
 Definition mxtens_index m n ij := Ordinal (@mxtens_index_proof m n ij).
 
 Lemma mxtens_index_proof1 m n (k : 'I_(m * n)) : k %/ n < m.
-Proof. by move: m n k=> [_ [] //|m] [|n] k; rewrite ?divn0 // ltn_divLR. Qed.
+Proof. by move: m n k=> -[_ [] //|m] [|n] k; rewrite ?divn0 // ltn_divLR. Qed.
 Lemma mxtens_index_proof2 m n (k : 'I_(m * n)) : k %% n < n.
 Proof. by rewrite ltn_mod; case: n k=> //; rewrite muln0=> [] []. Qed.
 
@@ -50,7 +50,7 @@ Implicit Arguments mxtens_unindex [[m] [n]].
 Lemma mxtens_indexK m n : cancel (@mxtens_index m n) (@mxtens_unindex m n).
 Proof.
 case: m=> [[[] //]|m]; case: n=> [[_ [] //]|n].
-move=> [i j]; congr (_, _); apply: val_inj=> /=.
+move=> -[i j]; congr (_, _); apply: val_inj=> /=.
   by rewrite divnMDl // divn_small.
 by rewrite modnMDl // modn_small.
 Qed.
@@ -279,14 +279,14 @@ Qed.
 Lemma eq_addl_mul q q' m m' d : m < d -> m' < d ->
   (q * d + m == q' * d  + m')%N = ((q, m) == (q', m')).
 Proof.
-move=> lt_md lt_m'd; apply/eqP/eqP; last by move=> [-> ->].
+move=> lt_md lt_m'd; apply/eqP/eqP; last by move=> -[-> ->].
 by move=> /(f_equal (edivn^~ d)); rewrite !edivn_eq.
 Qed.
 
 Lemma tensmx_unit (R : fieldType) m n (A : 'M[R]_m%N) (B : 'M[R]_n%N) :
   m != 0%N -> n != 0%N -> A \in unitmx -> B \in unitmx -> (A *t B) \in unitmx.
 Proof.
-move: m n A B => [|m] [|n] // A B _ _ uA uB.
+move: m n A B => -[|m] [|n] // A B _ _ uA uB.
 suff : (A^-1 *t B^-1) *m (A *t B) = 1 by case/mulmx1_unit.
 rewrite tensmx_mul !mulVmx //; apply/matrixP=> /= i j.
 rewrite !mxE /=; symmetry; rewrite -natrM -!val_eqE /=.

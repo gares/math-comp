@@ -736,7 +736,7 @@ Definition pair_eq := [rel u v : T1 * T2 | (u.1 == v.1) && (u.2 == v.2)].
 
 Lemma pair_eqP : Equality.axiom pair_eq.
 Proof.
-move=> [x1 x2] [y1 y2] /=; apply: (iffP andP) => [[]|[<- <-]] //=.
+move=> -[x1 x2] [y1 y2] /=; apply: (iffP andP) => [[]|[<- <-]] //=.
 by do 2!move/eqP->.
 Qed.
 

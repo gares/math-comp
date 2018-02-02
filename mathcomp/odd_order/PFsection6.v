@@ -85,7 +85,7 @@ Lemma coherent_seqIndD_bound (A B C D : {group gT}) :
   (*b*) coherent (S A) L^# tau -> \unless coherent (S B) L^# tau,
   #|K : A|%:R - 1 <= 2%:R * #|L : C|%:R * sqrtC #|C : D|%:R :> algC.
 Proof.
-move=> [nsAL nsBL nsCL nsDL] [ltAK sBD sDC sCK sDbZC] cohA.
+move=> -[nsAL nsBL nsCL nsDL] [ltAK sBD sDC sCK sDbZC] cohA.
 have sBC := subset_trans sBD sDC; have sBK := subset_trans sBC sCK.
 have [sAK nsBK] := (proper_sub ltAK, normalS sBK sKL nsBL).
 have{sBC} [nsAK nsBC] := (normalS sAK sKL nsAL, normalS sBC sCK nsBK).
