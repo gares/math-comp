@@ -504,7 +504,7 @@ Notation "[ 'choiceMixin' 'of' T 'by' <: ]" :=
   (sub_choiceMixin _ : choiceMixin T)
   (at level 0, format "[ 'choiceMixin'  'of'  T  'by'  <: ]") : form_scope.
 
-HB.instance Definition sig_choiceMixin (T : choiceType) (P : pred T) :=
+HB.instance Definition sig_choiceMixin (T : choiceType) (P : pred T) : has_choice {x | P x} :=
   [choiceMixin of {x | P x} by <:].
 
 HB.mixin Record is_countable (T : Type) : Type := {
@@ -652,7 +652,7 @@ Definition void_countMixin : is_countable void := PcanCountMixin (of_voidK unit)
 HB.instance Definition option_countMixin T : is_countable (option T) :=
   CanCountMixin (@seq_of_optK T).
 
-HB.instance Definition sig_countMixin (T : countType) (P : pred T) :=
+HB.instance Definition sig_countMixin (T : countType) (P : pred T) : is_countable {x | P x} :=
   [countMixin of {x | P x} by <:].
 
 HB.instance
