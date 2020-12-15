@@ -1499,7 +1499,7 @@ Check [subFinType of myb].
 Check [finType of myb].
 *)
 
-HB.instance Definition sig_finMixin (T : finType) (P : pred T) : is_finite {x | P x} :=
+HB.instance Definition sig_finMixin (T : finType) (P : pred T) : FinTypeForSub T P {x | P x} :=
   [finMixin of {x | P x} by <:].
 
 Section CardSig.
