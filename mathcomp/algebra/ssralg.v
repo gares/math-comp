@@ -1450,7 +1450,7 @@ End RightRegular.
 
 HB.mixin Record is_Lmodule_of_Zmodule (R : ringType) V of Zmodule V := {
   scale : R -> V -> V;
-  scalerA : forall a b v, scale a (scale b v) = scale (a * b) v;
+  scalerA' : forall a b v, scale a (scale b v) = scale (a * b) v;
   scale1r : left_id 1 scale;
   scalerDr : right_distributive scale +%R;
   scalerDl : forall v, {morph scale^~ v: a b / a + b}
@@ -1476,7 +1476,11 @@ Section LmoduleTheory.
 Variables (R : ringType) (V : lmodType R).
 Implicit Types (a b c : R) (u v : V).
 
-Local Notation "*:%R" := (@scale R V).
+(*Local Notation "*:%R" := (@scale R V).*)
+
+(* TODO: fix the type for the exported operation *)
+Lemma scalerA a b v : scale a (scale b v) = scale (a * b) v.
+Proof. exact: scalerA'. Qed.
 
 Lemma scale0r v : 0 *: v = 0.
 Proof. by apply: (addIr (1 *: v)); rewrite -scalerDl !add0r. Qed.
@@ -1561,10 +1565,10 @@ HB.mixin Record is_Lalgebra_of_Lmodule (R : ringType) V of
 
 Definition lalgType_of (R : ringType) (phR : phant R) := Lalgebra.type R.
 Notation lalgType R := (lalgType_of (Phant R)).
-Notation LalgType R T m := (@Lalgebra.pack _ [ringType of R] T _ m _ _ id _ id).
+Notation LalgType R T m := (Lalgebra.pack [ringType of R] T m).
 Notation LalgMixin := Lalgebra.Mixin.
 Notation "[ 'lalgType' R 'of' T 'for' cT ]" :=
-  (@Lalgebra.clone [ringType of R] T cT)
+  (Lalgebra.clone [ringType of R] T cT)
   (at level 0, format "[ 'lalgType'  R  'of'  T  'for'  cT ]") : form_scope.
 Notation "[ 'lalgType' R 'of' T ]" := [lalgType R of T for _]
   (at level 0, format "[ 'lalgType'  R  'of'  T ]") : form_scope.
@@ -2413,159 +2417,43 @@ End ScaleLinear.
 
 End ComRingTheory.
 
-Module Algebra.
-
-Section Mixin.
-
-Variables (R : ringType) (A : lalgType R).
-
-Definition axiom := forall k (x y : A), k *: (x * y) = x * (k *: y).
-
-Lemma comm_axiom : phant A -> commutative (@mul A) -> axiom.
-Proof. by move=> _ commA k x y; rewrite commA scalerAl commA. Qed.
-
-End Mixin.
-
-Section ClassDef.
-
-Variable R : ringType.
-
-Record class_of (T : Type) : Type := Class {
-  base : Lalgebra.class_of R T;
-  mixin : axiom (Lalgebra.Pack _ base)
+HB.mixin Record is_Algebra_of_Lalgebra (R : ringType) V of Lalgebra R V := {
+  scalerAr : forall k (x y : V), k *: (x * y) = x * (k *: y);
 }.
-Local Coercion base : class_of >-> Lalgebra.class_of.
+#[mathcomp] HB.structure Definition Algebra (R : ringType) :=
+  {A of is_Algebra_of_Lalgebra R A &}.
 
-Structure type (phR : phant R) := Pack {sort; _ : class_of sort}.
-Local Coercion sort : type >-> Sortclass.
-Variable (phR : phant R) (T : Type) (cT : type phR).
-Definition class := let: Pack _ c as cT' := cT return class_of cT' in c.
-Definition clone c of phant_id class c := @Pack phR T c.
-Let xT := let: Pack T _ := cT in T.
-Notation xclass := (class : class_of xT).
-
-Definition pack b0 (ax0 : @axiom R b0) :=
-  fun bT b & phant_id (@Lalgebra.class R phR bT) b =>
-  fun   ax & phant_id ax0 ax => Pack phR (@Class T b ax).
-
-Definition eqType := @Equality.Pack cT xclass.
-Definition choiceType := @Choice.Pack cT xclass.
-Definition zmodType := @Zmodule.Pack cT xclass.
-Definition ringType := @Ring.Pack cT xclass.
-Definition lmodType := @Lmodule.Pack R phR cT xclass.
-Definition lalgType := @Lalgebra.Pack R phR cT xclass.
-
-End ClassDef.
-
-Module Exports.
-Coercion base : class_of >-> Lalgebra.class_of.
-Coercion sort : type >-> Sortclass.
-Bind Scope ring_scope with sort.
-Coercion eqType : type >-> Equality.type.
-Canonical eqType.
-Coercion choiceType : type >-> Choice.type.
-Canonical choiceType.
-Coercion zmodType : type >-> Zmodule.type.
-Canonical zmodType.
-Coercion ringType : type >-> Ring.type.
-Canonical ringType.
-Coercion lmodType : type >-> Lmodule.type.
-Canonical lmodType.
-Coercion lalgType : type >-> Lalgebra.type.
-Canonical lalgType.
-Notation algType R := (type (Phant R)).
-Notation AlgType R A ax := (@pack _ (Phant R) A _ ax _ _ id _ id).
-Notation CommAlgType R A := (AlgType R A (comm_axiom (Phant A) (@mulrC _))).
-Notation "[ 'algType' R 'of' T 'for' cT ]" := (@clone _ (Phant R) T cT _ idfun)
+Definition algType_of (R : ringType) (phR : phant R) := Algebra.type R.
+Notation algType R := (algType_of (Phant R)).
+Notation AlgType R A ax := (Algebra.pack [ringType of R] A ax).
+Notation "[ 'algType' R 'of' T 'for' cT ]" := (Algebra.clone [ringType of R] T cT)
   (at level 0, format "[ 'algType'  R  'of'  T  'for'  cT ]")
   : form_scope.
-Notation "[ 'algType' R 'of' T ]" := (@clone _ (Phant R) T _ _ id)
+Notation "[ 'algType' R 'of' T ]" := [algType R of T for _]
   (at level 0, format "[ 'algType'  R  'of'  T ]") : form_scope.
-End Exports.
 
-End Algebra.
-Import Algebra.Exports.
+HB.factory Record is_ComAlgebra R V of ComRing V & Lalgebra R V := {}.
+HB.builders Context (R : ringType) V of is_ComAlgebra R V.
 
-Module ComAlgebra.
+Lemma scalarAr k (x y : V) : k *: (x * y) = x * (k *: y).
+Proof. by rewrite mulrC scalerAl mulrC. Qed.
 
-Section ClassDef.
+HB.instance Definition lalgebra_is_algebra : is_Algebra_of_Lalgebra R V :=
+  is_Algebra_of_Lalgebra.Build R V scalarAr.
 
-Variable R : ringType.
+HB.end.
 
-Record class_of (T : Type) : Type := Class {
-  base : Algebra.class_of R T;
-  mixin : commutative (Ring.mul base)
-}.
-Definition base2 R m := ComRing.Class (@mixin R m).
-Local Coercion base : class_of >-> Algebra.class_of.
-Local Coercion base2 : class_of >-> ComRing.class_of.
+#[mathcomp] HB.structure Definition ComAlgebra R := {V of is_ComAlgebra R V &}.
 
-Structure type (phR : phant R) := Pack {sort; _ : class_of sort}.
-Local Coercion sort : type >-> Sortclass.
-Variable (phR : phant R) (T : Type) (cT : type phR).
-Definition class := let: Pack _ c as cT' := cT return class_of cT' in c.
-Let xT := let: Pack T _ := cT in T.
-Notation xclass := (class : class_of xT).
-
-Definition pack :=
-  fun bT b & phant_id (@Algebra.class R phR bT) (b : Algebra.class_of R T) =>
-  fun mT m & phant_id (ComRing.mixin (ComRing.class mT)) m =>
-  Pack (Phant R) (@Class T b m).
-
-Definition eqType := @Equality.Pack cT xclass.
-Definition choiceType := @Choice.Pack cT xclass.
-Definition zmodType := @Zmodule.Pack cT xclass.
-Definition ringType := @Ring.Pack cT xclass.
-Definition comRingType := @ComRing.Pack cT xclass.
-Definition lmodType := @Lmodule.Pack R phR cT xclass.
-Definition lalgType := @Lalgebra.Pack R phR cT xclass.
-Definition algType := @Algebra.Pack R phR cT xclass.
-Definition lmod_comRingType := @Lmodule.Pack R phR comRingType xclass.
-Definition lalg_comRingType := @Lalgebra.Pack R phR comRingType xclass.
-Definition alg_comRingType := @Algebra.Pack R phR comRingType xclass.
-
-End ClassDef.
-
-Module Exports.
-Coercion base : class_of >-> Algebra.class_of.
-Coercion base2 : class_of >-> ComRing.class_of.
-Coercion sort : type >-> Sortclass.
-Bind Scope ring_scope with sort.
-Coercion eqType : type >-> Equality.type.
-Canonical eqType.
-Coercion choiceType : type >-> Choice.type.
-Canonical choiceType.
-Coercion zmodType : type >-> Zmodule.type.
-Canonical zmodType.
-Coercion ringType : type >-> Ring.type.
-Canonical ringType.
-Coercion comRingType : type >-> ComRing.type.
-Canonical comRingType.
-Coercion lmodType : type >-> Lmodule.type.
-Canonical lmodType.
-Coercion lalgType : type >-> Lalgebra.type.
-Canonical lalgType.
-Coercion algType : type >-> Algebra.type.
-Canonical algType.
-Canonical lmod_comRingType.
-Canonical lalg_comRingType.
-Canonical alg_comRingType.
-
-Notation comAlgType R := (type (Phant R)).
-Notation "[ 'comAlgType' R 'of' T ]" := (@pack _ (Phant R) T _ _ id _ _ id)
+Definition comAlgType_of (R : ringType) (phR : phant R) := ComAlgebra.type R.
+Notation comAlgType R := (comAlgType_of (Phant R)).
+Notation "[ 'comAlgType' R 'of' T ]" := (ComAlgebra.clone [ringType of R] T _)
   (at level 0, format "[ 'comAlgType'  R  'of'  T ]") : form_scope.
-End Exports.
-
-End ComAlgebra.
-Import ComAlgebra.Exports.
 
 Section AlgebraTheory.
 
 Variables (R : comRingType) (A : algType R).
 Implicit Types (k : R) (x y : A).
-
-Lemma scalerAr k x y : k *: (x * y) = x * (k *: y).
-Proof. by case: A k x y => T []. Qed.
 
 Lemma scalerCA k x y : k *: x * y = x * (k *: y).
 Proof. by rewrite -scalerAl scalerAr. Qed.
@@ -2598,9 +2486,10 @@ Lemma scaler_prodr (I : finType) (S : pred I) (F : I -> R) x :
   \prod_(i in S) (F i *: x)  = \prod_(i in S) F i *: x ^+ #|S|.
 Proof. by rewrite scaler_prod prodr_const. Qed.
 
-Canonical regular_comRingType := [comRingType of R^o].
-Canonical regular_algType := CommAlgType R R^o.
-Canonical regular_comAlgType := [comAlgType R of R^o].
+HB.instance Definition regular_comRingType : commutative_mul R^o :=
+  commutative_mul.Build R^o mulrC.
+HB.instance Definition regular_comAlgType : is_ComAlgebra R R^o :=
+  is_ComAlgebra.Build R R^o.
 
 Variables (U : lmodType R) (a : A) (f : {linear U -> A}).
 
@@ -2610,78 +2499,26 @@ Canonical mull_fun_linear := AddLinear mull_fun_is_scalable.
 
 End AlgebraTheory.
 
-Module UnitRing.
-
-Record mixin_of (R : ringType) : Type := Mixin {
-  unit : pred R;
+HB.mixin Record has_mul_inverse R of Ring R := {
+  unit_subdef : pred R;
   inv : R -> R;
-  _ : {in unit, left_inverse 1 inv *%R};
-  _ : {in unit, right_inverse 1 inv *%R};
-  _ : forall x y, y * x = 1 /\ x * y = 1 -> unit x;
-  _ : {in [predC unit], inv =1 id}
+  mulVr_subproof : {in unit_subdef, left_inverse 1 inv *%R};
+  divrr_subproof : {in unit_subdef, right_inverse 1 inv *%R};
+  unitrP_subproof : forall x y, y * x = 1 /\ x * y = 1 -> unit_subdef x;
+  invr_out_subproof : {in [predC unit_subdef], inv =1 id}
 }.
+#[mathcomp] HB.structure Definition UnitRing := {R of has_mul_inverse R&}.
 
-Definition EtaMixin R unit inv mulVr mulrV unitP inv_out :=
-  let _ := @Mixin R unit inv mulVr mulrV unitP inv_out in
-  @Mixin (Ring.Pack (Ring.class R)) unit inv mulVr mulrV unitP inv_out.
-
-Section ClassDef.
-
-Record class_of (R : Type) : Type := Class {
-  base : Ring.class_of R;
-  mixin : mixin_of (Ring.Pack base)
-}.
-Local Coercion base : class_of >-> Ring.class_of.
-
-Structure type := Pack {sort; _ : class_of sort}.
-Local Coercion sort : type >-> Sortclass.
-Variables (T : Type) (cT : type).
-Definition class := let: Pack _ c as cT' := cT return class_of cT' in c.
-Definition clone c of phant_id class c := @Pack T c.
-Let xT := let: Pack T _ := cT in T.
-Notation xclass := (class : class_of xT).
-
-Definition pack b0 (m0 : mixin_of (@Ring.Pack T b0)) :=
-  fun bT b & phant_id (Ring.class bT) b =>
-  fun    m & phant_id m0 m => Pack (@Class T b m).
-
-Definition eqType := @Equality.Pack cT xclass.
-Definition choiceType := @Choice.Pack cT xclass.
-Definition zmodType := @Zmodule.Pack cT xclass.
-Definition ringType := @Ring.Pack cT xclass.
-
-End ClassDef.
-
-Module Exports.
-Coercion base : class_of >-> Ring.class_of.
-Coercion mixin : class_of >-> mixin_of.
-Coercion sort : type >-> Sortclass.
-Bind Scope ring_scope with sort.
-Coercion eqType : type >-> Equality.type.
-Canonical eqType.
-Coercion choiceType : type >-> Choice.type.
-Canonical choiceType.
-Coercion zmodType : type >-> Zmodule.type.
-Canonical zmodType.
-Coercion ringType : type >-> Ring.type.
-Canonical ringType.
-Notation unitRingType := type.
-Notation UnitRingType T m := (@pack T _ m _ _ id _ id).
-Notation UnitRingMixin := EtaMixin.
-Notation "[ 'unitRingType' 'of' T 'for' cT ]" := (@clone T cT _ idfun)
+Notation unitRingType := UnitRing.type.
+Notation UnitRingType T m := (UnitRing.pack T m).
+Notation "[ 'unitRingType' 'of' T 'for' cT ]" := (UnitRing.clone T cT)
   (at level 0, format "[ 'unitRingType'  'of'  T  'for'  cT ]") : form_scope.
-Notation "[ 'unitRingType' 'of' T ]" := (@clone T _ _ id)
+Notation "[ 'unitRingType' 'of' T ]" := (UnitRing.clone T _)
   (at level 0, format "[ 'unitRingType'  'of'  T ]") : form_scope.
-End Exports.
 
-End UnitRing.
-Import UnitRing.Exports.
-
-Definition unit {R : unitRingType} :=
-  [qualify a u : R | UnitRing.unit (UnitRing.class R) u].
+Definition unit {R : unitRingType} := [qualify a u : R | unit_subdef u].
 Fact unit_key R : pred_key (@unit R). Proof. by []. Qed.
 Canonical unit_keyed R := KeyedQualifier (@unit_key R).
-Definition inv {R : unitRingType} : R -> R := UnitRing.inv (UnitRing.class R).
 
 Local Notation "x ^-1" := (inv x).
 Local Notation "x / y" := (x * y^-1).
@@ -2693,18 +2530,18 @@ Variable R : unitRingType.
 Implicit Types x y : R.
 
 Lemma divrr : {in unit, right_inverse 1 (@inv R) *%R}.
-Proof. by case: R => T [? []]. Qed.
+Proof. exact: divrr_subproof. Qed.
 Definition mulrV := divrr.
 
 Lemma mulVr : {in unit, left_inverse 1 (@inv R) *%R}.
-Proof. by case: R => T [? []]. Qed.
+Proof. exact: mulVr_subproof. Qed.
 
 Lemma invr_out x : x \isn't a unit -> x^-1 = x.
-Proof. by case: R x => T [? []]. Qed.
+Proof. exact: invr_out_subproof. Qed.
 
 Lemma unitrP x : reflect (exists y, y * x = 1 /\ x * y = 1) (x \is a unit).
 Proof.
-apply: (iffP idP) => [Ux | []]; last by case: R x => T [? []].
+apply: (iffP idP) => [Ux | []]; last exact: unitrP_subproof.
 by exists x^-1; rewrite divrr ?mulVr.
 Qed.
 
@@ -2867,10 +2704,10 @@ Proof. by rewrite (inv_eq invrK) invr1. Qed.
 Lemma rev_unitrP (x y : R^c) : y * x = 1 /\ x * y = 1 -> x \is a unit.
 Proof. by case=> [yx1 xy1]; apply/unitrP; exists y. Qed.
 
-Definition converse_unitRingMixin :=
-  @UnitRing.Mixin _ (unit : {pred R^c}) _ mulrV mulVr rev_unitrP invr_out.
-Canonical converse_unitRingType := UnitRingType R^c converse_unitRingMixin.
-Canonical regular_unitRingType := [unitRingType of R^o].
+HB.instance Definition _ : has_mul_inverse R^c :=
+  has_mul_inverse.Build R^c mulrV mulVr rev_unitrP invr_out.
+HB.instance Definition _ : has_mul_inverse R^o :=
+  has_mul_inverse.Build R^o mulVr mulrV unitrP_subproof invr_out.
 
 Section ClosedPredicates.
 
@@ -2935,13 +2772,18 @@ Proof. by move=> Uy; rewrite rmorphM rmorphV. Qed.
 
 End UnitRingMorphism.
 
-Module ComUnitRing.
+#[mathcomp]
+HB.structure Definition ComUnitRing := {R of ComRing R & UnitRing R}.
 
-Section Mixin.
+HB.factory Record is_ComUnitRing R of ComRing R := {
+  unit : {pred R};
+  inv : R -> R;
+  mulVx : {in unit, left_inverse 1 inv *%R};
+  unitPl : forall x y, y * x = 1 -> unit x;
+  invr_out : {in [predC unit], inv =1 id}
+}.
 
-Variables (R : comRingType) (unit : pred R) (inv : R -> R).
-Hypothesis mulVx : {in unit, left_inverse 1 inv *%R}.
-Hypothesis unitPl : forall x y, y * x = 1 -> unit x.
+HB.builders Context R of is_ComUnitRing R.
 
 Fact mulC_mulrV : {in unit, right_inverse 1 inv *%R}.
 Proof. by move=> x Ux /=; rewrite mulrC mulVx. Qed.
@@ -2949,134 +2791,19 @@ Proof. by move=> x Ux /=; rewrite mulrC mulVx. Qed.
 Fact mulC_unitP x y : y * x = 1 /\ x * y = 1 -> unit x.
 Proof. by case=> yx _; apply: unitPl yx. Qed.
 
-Definition Mixin := UnitRingMixin mulVx mulC_mulrV mulC_unitP.
+HB.instance Definition _ : has_mul_inverse R :=
+  has_mul_inverse.Build R mulVx mulC_mulrV mulC_unitP invr_out.
 
-End Mixin.
+HB.end.
 
-Section ClassDef.
-
-Record class_of (R : Type) : Type := Class {
-  base : ComRing.class_of R;
-  mixin : UnitRing.mixin_of (Ring.Pack base)
-}.
-Local Coercion base : class_of >-> ComRing.class_of.
-Definition base2 R m := UnitRing.Class (@mixin R m).
-Local Coercion base2 : class_of >-> UnitRing.class_of.
-
-Structure type := Pack {sort; _ : class_of sort}.
-Local Coercion sort : type >-> Sortclass.
-Variables (T : Type) (cT : type).
-Definition class := let: Pack _ c as cT' := cT return class_of cT' in c.
-Let xT := let: Pack T _ := cT in T.
-Notation xclass := (class : class_of xT).
-
-Definition pack :=
-  fun bT b & phant_id (ComRing.class bT) (b : ComRing.class_of T) =>
-  fun mT m & phant_id (UnitRing.class mT) (@UnitRing.Class T b m) =>
-  Pack (@Class T b m).
-
-Definition eqType := @Equality.Pack cT xclass.
-Definition choiceType := @Choice.Pack cT xclass.
-Definition zmodType := @Zmodule.Pack cT xclass.
-Definition ringType := @Ring.Pack cT xclass.
-Definition comRingType := @ComRing.Pack cT xclass.
-Definition unitRingType := @UnitRing.Pack cT xclass.
-Definition com_unitRingType := @UnitRing.Pack comRingType xclass.
-
-End ClassDef.
-
-Module Import Exports.
-Coercion base : class_of >-> ComRing.class_of.
-Coercion mixin : class_of >-> UnitRing.mixin_of.
-Coercion base2 : class_of >-> UnitRing.class_of.
-Coercion sort : type >-> Sortclass.
-Bind Scope ring_scope with sort.
-Coercion eqType : type >-> Equality.type.
-Canonical eqType.
-Coercion choiceType : type >-> Choice.type.
-Canonical choiceType.
-Coercion zmodType : type >-> Zmodule.type.
-Canonical zmodType.
-Coercion ringType : type >-> Ring.type.
-Canonical ringType.
-Coercion comRingType : type >-> ComRing.type.
-Canonical comRingType.
-Coercion unitRingType : type >-> UnitRing.type.
-Canonical unitRingType.
-Canonical com_unitRingType.
-Notation comUnitRingType := type.
-Notation ComUnitRingMixin := Mixin.
-Notation "[ 'comUnitRingType' 'of' T ]" := (@pack T _ _ id _ _ id)
+Notation comUnitRingType := ComUnitRing.type.
+Notation "[ 'comUnitRingType' 'of' T ]" := (ComUnitRing.clone T _)
   (at level 0, format "[ 'comUnitRingType'  'of'  T ]") : form_scope.
-End Exports.
 
-End ComUnitRing.
-Import ComUnitRing.Exports.
+#[mathcomp]
+HB.structure Definition UnitAlgebra R := {V of Algebra R V & UnitRing V}.
 
-Module UnitAlgebra.
-
-Section ClassDef.
-
-Variable R : ringType.
-
-Record class_of (T : Type) : Type := Class {
-  base : Algebra.class_of R T;
-  mixin : GRing.UnitRing.mixin_of (Ring.Pack base)
-}.
-Definition base2 R m := UnitRing.Class (@mixin R m).
-Local Coercion base : class_of >-> Algebra.class_of.
-Local Coercion base2 : class_of >-> UnitRing.class_of.
-
-Structure type (phR : phant R) := Pack {sort; _ : class_of sort}.
-Local Coercion sort : type >-> Sortclass.
-Variable (phR : phant R) (T : Type) (cT : type phR).
-Definition class := let: Pack _ c as cT' := cT return class_of cT' in c.
-Let xT := let: Pack T _ := cT in T.
-Notation xclass := (class : class_of xT).
-
-Definition pack :=
-  fun bT b & phant_id (@Algebra.class R phR bT) (b : Algebra.class_of R T) =>
-  fun mT m & phant_id (UnitRing.mixin (UnitRing.class mT)) m =>
-  Pack (Phant R) (@Class T b m).
-
-Definition eqType := @Equality.Pack cT xclass.
-Definition choiceType := @Choice.Pack cT xclass.
-Definition zmodType := @Zmodule.Pack cT xclass.
-Definition ringType := @Ring.Pack cT xclass.
-Definition unitRingType := @UnitRing.Pack cT xclass.
-Definition lmodType := @Lmodule.Pack R phR cT xclass.
-Definition lalgType := @Lalgebra.Pack R phR cT xclass.
-Definition algType := @Algebra.Pack R phR cT xclass.
-Definition lmod_unitRingType := @Lmodule.Pack R phR unitRingType xclass.
-Definition lalg_unitRingType := @Lalgebra.Pack R phR unitRingType xclass.
-Definition alg_unitRingType := @Algebra.Pack R phR unitRingType xclass.
-
-End ClassDef.
-
-Module Exports.
-Coercion base : class_of >-> Algebra.class_of.
-Coercion base2 : class_of >-> UnitRing.class_of.
-Coercion sort : type >-> Sortclass.
-Bind Scope ring_scope with sort.
-Coercion eqType : type >-> Equality.type.
-Canonical eqType.
-Coercion choiceType : type >-> Choice.type.
-Canonical choiceType.
-Coercion zmodType : type >-> Zmodule.type.
-Canonical zmodType.
-Coercion ringType : type >-> Ring.type.
-Canonical ringType.
-Coercion unitRingType : type >-> UnitRing.type.
-Canonical unitRingType.
-Coercion lmodType : type >-> Lmodule.type.
-Canonical lmodType.
-Coercion lalgType : type >-> Lalgebra.type.
-Canonical lalgType.
-Coercion algType : type >-> Algebra.type.
-Canonical algType.
-Canonical lmod_unitRingType.
-Canonical lalg_unitRingType.
-Canonical alg_unitRingType.
+Definition unitAlgType_of .... phant R ...
 Notation unitAlgType R := (type (Phant R)).
 Notation "[ 'unitAlgType' R 'of' T ]" := (@pack _ (Phant R) T _ _ id _ _ id)
   (at level 0, format "[ 'unitAlgType'  R  'of'  T ]") : form_scope.
