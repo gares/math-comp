@@ -4569,19 +4569,42 @@ Qed.
 
 End ClosedFieldTheory.
 
-Module SubType.
+Implicit Type V : zmodType.
 
-Section Zmodule.
+HB.mixin
+Record is_subZmodule V (S : {pred V}) (U : indexed Type) of SUB V S U & Zmodule U := {
+  valB : additive (val : U -> V);
+}.
 
-Variables (V : zmodType) (S : {pred V}).
-Variables (subS : zmodPred S) (kS : keyed_pred subS).
-Variable U : subType (mem kS).
+#[mathcomp]
+HB.structure Definition subZmodule V S := { U of subChoice V S U & Zmodule U & is_subZmodule V S U }.
 
-Let inU v Sv : U := Sub v Sv.
+Section additive.
+Context V (S : {pred V}) (U : subZmodule.type S).
+Notation val := (val : U -> V).
+Canonical val_additive := Additive (valB : additive val).
+Lemma valD : {morph val : x y / x + y}. Proof. exact: raddfD. Qed.
+Lemma val0 : val 0 = 0. Proof. exact: raddf0. Qed.
+Lemma valN : {morph val : x / - x}. Proof. exact: raddfN. Qed.
+End additive.
+
+HB.factory Record pred_subZmodule V (S : {pred V})
+    (subS : zmodPred S)
+    (kS : keyed_pred subS)
+    (U : indexed Type) of subChoice V S U := {}.
+
+HB.builders Context (V : zmodType) (S : {pred V})
+  (subS : zmodPred S)
+  (kS : keyed_pred subS)
+  (U : indexed Type) of pred_subZmodule V S subS kS U.
+
+Let kS_S v : v \in kS -> v \in S. Proof. by rewrite keyed_predE. Qed.
+Let S_kS v : v \in S -> v \in kS. Proof. by rewrite keyed_predE. Qed.
+Let inU v Sv : U := Sub v (kS_S Sv).
 Let zeroU := inU (rpred0 kS).
 
-Let oppU (u : U) := inU (rpredNr (valP u)).
-Let addU (u1 u2 : U) := inU (rpredD (valP u1) (valP u2)).
+Let oppU (u : U) := inU (rpredNr (S_kS (valP u))).
+Let addU (u1 u2 : U) := inU (rpredD (S_kS (valP u1)) (S_kS (valP u2))).
 
 Fact addA : associative addU.
 Proof. by move=> u1 u2 u3; apply: val_inj; rewrite !SubK addrA. Qed.
@@ -4592,53 +4615,77 @@ Proof. by move=> u; apply: val_inj; rewrite !SubK add0r. Qed.
 Fact addN : left_inverse zeroU oppU addU.
 Proof. by move=> u; apply: val_inj; rewrite !SubK addNr. Qed.
 
-Definition zmodMixin of phant U := ZmodMixin addA addC add0 addN.
+HB.instance Definition _ := is_Zmodule.Build U addA addC add0 addN.
 
-End Zmodule.
+Lemma raddf_val : additive (val : U -> V).
+Proof. by move=> x y /=; rewrite !SubK. Qed.
 
-Section Ring.
+HB.instance Definition _ := is_subZmodule.Build V S U raddf_val.
 
-Variables (R : ringType) (S : {pred R}).
-Variables (ringS : subringPred S) (kS : keyed_pred ringS).
+HB.end.
 
-Definition cast_zmodType (V : zmodType) T (VeqT : V = T :> Type) :=
-  let cast mV := let: erefl in _ = T := VeqT return Zmodule.class_of T in mV in
-  Zmodule.Pack (cast (Zmodule.class V)).
+HB.mixin
+Record is_subRing (R : ringType) (S : {pred R}) (U : indexed Type) of subZmodule R S U & Ring U := {
+  valM : multiplicative (val : U -> R);
+}.
 
-Variable (T : subType (mem kS)) (V : zmodType) (VeqT: V = T :> Type).
+HB.structure
+Definition subRing R S := { U of subZmodule R S U & Ring U & is_subRing R S U}.
 
-Let inT x Sx : T := Sub x Sx.
-Let oneT := inT (rpred1 kS).
-Let mulT (u1 u2 : T) := inT (rpredM (valP u1) (valP u2)).
-Let T' := cast_zmodType VeqT.
+Section multiplicative.
+Context (R : ringType) (S : {pred R}) (U : subRing.type S).
+Notation val := (val : U -> R).
+Canonical val_multiplicative := AddRMorphism (valM : multiplicative val).
+Lemma val1 : val 1 = 1. Proof. exact: rmorph1. Qed.
+End multiplicative.
 
-Hypothesis valM : {morph (val : T' -> R) : x y / x - y}.
+HB.factory Record pred_subRing (R : ringType) (S : {pred R})
+  (ringS : subringPred S) (kS : keyed_pred ringS)
+  (U : indexed Type) of subZmodule R S U := {}.
 
-Let val0 : val (0 : T') = 0.
-Proof. by rewrite -(subrr (0 : T')) valM subrr. Qed.
-Let valD : {morph (val : T' -> R): x y / x + y}.
-Proof.
-by move=> u v; rewrite -{1}[v]opprK -[- v]sub0r !valM val0 sub0r opprK.
-Qed.
+HB.builders Context (R : ringType) (S : {pred R})
+(ringS : subringPred S) (kS : keyed_pred ringS)
+(U : indexed Type) of pred_subRing R S ringS kS U.
 
-Fact mulA : @associative T' mulT.
+Let kS_S v : v \in kS -> v \in S. Proof. by rewrite keyed_predE. Qed.
+Let S_kS v : v \in S -> v \in kS. Proof. by rewrite keyed_predE. Qed.
+Let inU v Sv : U := Sub v (kS_S Sv).
+Let oneU : U := inU (rpred1 kS).
+Let mulU (u1 u2 : U) := inU (rpredM (S_kS (valP u1)) (S_kS (valP u2))).
+
+Fact mulA : associative mulU.
 Proof. by move=> u1 u2 u3; apply: val_inj; rewrite !SubK mulrA. Qed.
-Fact mul1l : left_id oneT mulT.
+Fact mul1l : left_id oneU mulU.
 Proof. by move=> u; apply: val_inj; rewrite !SubK mul1r. Qed.
-Fact mul1r : right_id oneT mulT.
+Fact mul1r : right_id oneU mulU.
 Proof. by move=> u; apply: val_inj; rewrite !SubK mulr1. Qed.
-Fact mulDl : @left_distributive T' T' mulT +%R.
+Fact mulDl : left_distributive mulU +%R.
 Proof. by move=> u1 u2 u3; apply: val_inj; rewrite !(SubK, valD) mulrDl. Qed.
-Fact mulDr : @right_distributive T' T' mulT +%R.
+Fact mulDr : right_distributive mulU +%R.
 Proof. by move=> u1 u2 u3; apply: val_inj; rewrite !(SubK, valD) mulrDr. Qed.
-Fact nz1 : oneT != 0 :> T'.
-Proof.
-by apply: contraNneq (oner_neq0 R) => eq10; rewrite -val0 -eq10 SubK.
-Qed.
+Fact nz1 : oneU != 0.
+Proof. by rewrite -val_eqE /= SubK val0 oner_eq0. Qed.
 
-Definition ringMixin := RingMixin mulA mul1l mul1r mulDl mulDr nz1.
+HB.instance Definition _ := is_Ring_of_Zmodule.Build U mulA mul1l mul1r mulDl mulDr nz1.
 
-End Ring.
+Fact valM : multiplicative (val : U -> R).
+Proof. by split=> [x y|]; rewrite !SubK. Qed.
+
+HB.instance Definition _ := is_subRing.Build R S U valM.
+
+HB.end.
+
+HB.mixin Record is_subLmodule  (R : ringType) (V : lmodType R) (S : {pred V})
+ (W : indexed Type) of subZmodule V S W & Lmodule R W := {
+ valZ : scalable (val : W -> V);
+}.
+
+(* BUG: coercions *)
+HB.structure
+Definition subLmodule (R : ringType) (V : lmodType (Ring.sort R)) (S : {pred (Lmodule.sort V)}) :=
+  { W of subZmodule V S W & is_Lmodule_of_Zmodule R W & is_subLmodule R V S W}.
+
+STOP
 
 Section Lmodule.
 
