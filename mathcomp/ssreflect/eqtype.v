@@ -523,6 +523,8 @@ HB.structure Definition subEquality T (P : pred T) :=
 
 Notation subEqType := subEquality.type.
 Notation val := (is_SUB.val (SUB.class _)).
+Notation "\val" := (is_SUB.val (SUB.class _)) (only parsing).
+Notation "\val" := (is_SUB.val _) (only printing).
 
 Section SubType.
 

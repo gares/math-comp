@@ -1462,7 +1462,7 @@ HB.mixin Record is_Lmodule_of_Zmodule (R : ringType) V of Zmodule V := {
 
 Definition lmodType_of (R : ringType) (phR : phant R) := Lmodule.type R.
 Notation lmodType R := (lmodType_of (Phant R)).
-Notation LmodType R T m := (@Lmodule.pack _ [ringType of R] T _ m _ _ id _ id).
+Notation LmodType R T m := (@Lmodule.pack [the ringType of R] T m).
 Notation LmodMixin := Lmodule.Mixin.
 Notation "[ 'lmodType' R 'of' T 'for' cT ]" :=
   (@Lmodule.clone [the ringType of R] T cT)
