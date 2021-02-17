@@ -636,6 +636,8 @@ HB.mixin Record is_Zmodule V := {
 
 #[mathcomp]
 HB.structure Definition Zmodule := {V of is_eqType V & has_choice V & is_Zmodule V}.
+
+Module ZmodExports.
 Notation zmodType := Zmodule.type.
 Notation ZmodType T m := (@Zmodule.pack T m).
 Notation ZmodMixin V := (is_Zmodule.Build V).
@@ -643,6 +645,8 @@ Notation "[ 'zmodType' 'of' T 'for' cT ]" := (@Zmodule.clone T cT)
   (at level 0, format "[ 'zmodType'  'of'  T  'for'  cT ]") : form_scope.
 Notation "[ 'zmodType' 'of' T ]" :=  (@Zmodule.clone T _)
   (at level 0, format "[ 'zmodType'  'of'  T ]") : form_scope.
+End ZmodExports.
+HB.export ZmodExports.
 
 Local Notation "0" := (@zero _) : ring_scope.
 Local Notation "-%R" := (@opp _) : ring_scope.
@@ -899,6 +903,7 @@ HB.structure Definition Ring := { R of is_Ring R &}.
 (*   @is_Ring_of_Zmodule.Build (Zmodule.Pack _ (Zmodule.class R)) _ _ _ *)
 (*      mulA mul1x mulx1 mul_addl mul_addr nz1. *)
 
+Module RingExports.
 Notation ringType := Ring.type.
 Notation RingType T m := (@Ring.pack T m).
 Notation RingMixin T := (is_Ring_of_Zmodule.Build T).
@@ -906,6 +911,8 @@ Notation "[ 'ringType' 'of' T 'for' cT ]" := (Ring.clone T cT)
   (at level 0, format "[ 'ringType'  'of'  T  'for'  cT ]") : form_scope.
 Notation "[ 'ringType' 'of' T ]" := (Ring.clone T _)
   (at level 0, format "[ 'ringType'  'of'  T ]") : form_scope.
+End RingExports.
+HB.export RingExports.
 
 Definition exp R x n := nosimpl iterop _ n (@mul R) x (@one R).
 Notation sign R b := (exp (- @one R) (nat_of_bool b)) (only parsing).
@@ -1371,16 +1378,6 @@ Proof. by move=> y; rewrite -{1}[x]oppr_char2 addKr. Qed.
 
 End Char2.
 
-HB.instance (R^c) (Zmodule.class R).
-
-Definition converse_ringMixin :=
-  let mul' x y := y * x in
-  let mulrA' x y z := esym (mulrA z y x) in
-  let mulrDl' x y z := mulrDr z x y in
-  let mulrDr' x y z := mulrDl y z x in
-  @is_Ring_of_Zmodule.Build _ (1 : R) mul' mulrA' mulr1 mul1r mulrDl' mulrDr' oner_neq0.
-HB.instance (R^c) converse_ringMixin.
-
 Section ClosedPredicates.
 
 Variable S : {pred R}.
@@ -1417,6 +1414,27 @@ Qed.
 End ClosedPredicates.
 
 End RingTheory.
+
+
+Module ConverseZmodExports.
+Section RightRegular.
+
+Variable R : ringType.
+Implicit Types x y : R.
+
+HB.instance (R^c) (Zmodule.class R).
+
+Definition converse_ringMixin :=
+  let mul' x y := y * x in
+  let mulrA' x y z := esym (mulrA z y x) in
+  let mulrDl' x y z := mulrDr z x y in
+  let mulrDr' x y z := mulrDl y z x in
+  @is_Ring_of_Zmodule.Build _ (1 : R) mul' mulrA' mulr1 mul1r mulrDl' mulrDr' oner_neq0.
+HB.instance (R^c) converse_ringMixin.
+
+End RightRegular.
+End ConverseZmodExports.
+HB.export ConverseZmodExports.
 
 Section RightRegular.
 
@@ -1460,6 +1478,7 @@ HB.mixin Record is_Lmodule_of_Zmodule (R : ringType) V of Zmodule V := {
 #[mathcomp] HB.structure Definition Lmodule (R : ringType) :=
   {M of Zmodule M & is_Lmodule_of_Zmodule R M}.
 
+Module LmodExports.
 Definition lmodType_of (R : ringType) (phR : phant R) := Lmodule.type R.
 Notation lmodType R := (lmodType_of (Phant R)).
 Notation LmodType R T m := (@Lmodule.pack [the ringType of R] T m).
@@ -1469,6 +1488,8 @@ Notation "[ 'lmodType' R 'of' T 'for' cT ]" :=
   (at level 0, format "[ 'lmodType'  R  'of'  T  'for'  cT ]") : form_scope.
 Notation "[ 'lmodType' R 'of' T ]" := [lmodType R of T for _]
   (at level 0, format "[ 'lmodType'  R  'of'  T ]") : form_scope.
+End LmodExports.
+HB.export LmodExports.
 
 Local Notation "*:%R" := (@scale _ _).
 Local Notation "a *: v" := (scale a v) : ring_scope.
@@ -1565,6 +1586,7 @@ HB.mixin Record is_Lalgebra_of_Lmodule (R : ringType) V of
 #[mathcomp] HB.structure Definition Lalgebra (R : ringType) :=
   {A of is_Lalgebra_of_Lmodule R A &}.
 
+Module LalgExports.
 Definition lalgType_of (R : ringType) (phR : phant R) := Lalgebra.type R.
 Notation lalgType R := (lalgType_of (Phant R)).
 Notation LalgType R T m := (Lalgebra.pack [ringType of R] T m).
@@ -1574,7 +1596,8 @@ Notation "[ 'lalgType' R 'of' T 'for' cT ]" :=
   (at level 0, format "[ 'lalgType'  R  'of'  T  'for'  cT ]") : form_scope.
 Notation "[ 'lalgType' R 'of' T ]" := [lalgType R of T for _]
   (at level 0, format "[ 'lalgType'  R  'of'  T ]") : form_scope.
-
+End LalgExports.
+HB.export LalgExports.
 
 (* Scalar injection (see the definition of in_alg A below). *)
 Local Notation "k %:A" := (k *: 1) : ring_scope.
@@ -1583,13 +1606,11 @@ Local Notation "k %:A" := (k *: 1) : ring_scope.
 Definition regular R : Type := R.
 Local Notation "R ^o" := (regular R) (at level 2, format "R ^o") : type_scope.
 
+Module RegularLalgExports.
 Section LalgebraTheory.
 
 Variables (R : ringType) (A : lalgType R).
 Implicit Types x y : A.
-
-Lemma mulr_algl a x : (a *: 1) * x = a *: x.
-Proof. by rewrite -scalerAl mul1r. Qed.
 
 HB.instance (R^o) (Ring.class R).
 
@@ -1600,6 +1621,17 @@ HB.instance (R^o) regular_lmodMixin.
 
 HB.instance Definition regular_lalgMixin : is_Lalgebra_of_Lmodule R (R^o) :=
   is_Lalgebra_of_Lmodule.Build R (R^o) mulrA.
+End LalgebraTheory.
+End RegularLalgExports.
+HB.export RegularLalgExports.
+
+Section LalgebraTheory.
+
+Variables (R : ringType) (A : lalgType R).
+Implicit Types x y : A.
+
+Lemma mulr_algl a x : (a *: 1) * x = a *: x.
+Proof. by rewrite -scalerAl mul1r. Qed.
 
 Section ClosedPredicates.
 
@@ -2319,6 +2351,7 @@ HB.mixin Record commutative_mul R of Ring R := {
 #[mathcomp]
 HB.structure Definition ComRing := {R of Ring R & commutative_mul R}.
 
+Module ComRingExports.
 Notation comRingType := ComRing.type.
 Notation ComRingType T m := (ComRing.pack T m).
 Notation ComRingMixin := ComRing.Mixin.
@@ -2326,6 +2359,8 @@ Notation "[ 'comRingType' 'of' T 'for' cT ]" := (ComRing.clone T cT)
   (at level 0, format "[ 'comRingType'  'of'  T  'for'  cT ]") : form_scope.
 Notation "[ 'comRingType' 'of' T ]" := (ComRing.clone T _)
   (at level 0, format "[ 'comRingType'  'of'  T ]") : form_scope.
+End ComRingExports.
+HB.export ComRingExports.
 
 Section ComRingTheory.
 
@@ -2426,6 +2461,7 @@ HB.mixin Record is_Algebra_of_Lalgebra (R : ringType) V of Lalgebra R V := {
 #[mathcomp] HB.structure Definition Algebra (R : ringType) :=
   {A of is_Algebra_of_Lalgebra R A &}.
 
+Module AlgExports.
 Definition algType_of (R : ringType) (phR : phant R) := Algebra.type R.
 Notation algType R := (algType_of (Phant R)).
 Notation AlgType R A ax := (Algebra.pack [ringType of R] A ax).
@@ -2435,6 +2471,8 @@ Notation "[ 'algType' R 'of' T 'for' cT ]" :=
   : form_scope.
 Notation "[ 'algType' R 'of' T ]" := [algType R of T for _]
   (at level 0, format "[ 'algType'  R  'of'  T ]") : form_scope.
+End AlgExports.
+HB.export AlgExports.
 
 HB.factory Record is_ComAlgebra R V of ComRing V & Lalgebra R V := {}.
 HB.builders Context (R : ringType) V of is_ComAlgebra R V.
@@ -2449,11 +2487,25 @@ HB.end.
 
 #[mathcomp] HB.structure Definition ComAlgebra R := {V of is_ComAlgebra R V &}.
 
+Module ComAlgExports.
 Definition comAlgType_of (R : ringType) (phR : phant R) := ComAlgebra.type R.
 Notation comAlgType R := (comAlgType_of (Phant R)).
 Notation "[ 'comAlgType' R 'of' T ]" :=
     (ComAlgebra.clone [the ringType of R] T _)
   (at level 0, format "[ 'comAlgType'  R  'of'  T ]") : form_scope.
+
+Section AlgebraTheory.
+
+Variables (R : comRingType) (A : algType R).
+
+HB.instance Definition regular_comRingType : commutative_mul R^o :=
+  commutative_mul.Build R^o mulrC.
+HB.instance Definition regular_comAlgType : is_ComAlgebra R R^o :=
+  is_ComAlgebra.Build R R^o.
+
+End AlgebraTheory.
+End ComAlgExports.
+HB.export ComAlgExports.
 
 Section AlgebraTheory.
 
@@ -2491,11 +2543,6 @@ Lemma scaler_prodr (I : finType) (S : pred I) (F : I -> R) x :
   \prod_(i in S) (F i *: x)  = \prod_(i in S) F i *: x ^+ #|S|.
 Proof. by rewrite scaler_prod prodr_const. Qed.
 
-HB.instance Definition regular_comRingType : commutative_mul R^o :=
-  commutative_mul.Build R^o mulrC.
-HB.instance Definition regular_comAlgType : is_ComAlgebra R R^o :=
-  is_ComAlgebra.Build R R^o.
-
 Variables (U : lmodType R) (a : A) (f : {linear U -> A}).
 
 Lemma mull_fun_is_scalable : scalable (a \*o f).
@@ -2514,12 +2561,15 @@ HB.mixin Record has_mul_inverse R of Ring R := {
 }.
 #[mathcomp] HB.structure Definition UnitRing := {R of has_mul_inverse R&}.
 
+Module UnitRingExports.
 Notation unitRingType := UnitRing.type.
 Notation UnitRingType T m := (UnitRing.pack T m).
 Notation "[ 'unitRingType' 'of' T 'for' cT ]" := (UnitRing.clone T cT)
   (at level 0, format "[ 'unitRingType'  'of'  T  'for'  cT ]") : form_scope.
 Notation "[ 'unitRingType' 'of' T ]" := (UnitRing.clone T _)
   (at level 0, format "[ 'unitRingType'  'of'  T ]") : form_scope.
+End UnitRingExports.
+HB.export UnitRingExports.
 
 Definition unit {R : unitRingType} := [qualify a u : R | unit_subdef u].
 Fact unit_key R : pred_key (@unit R). Proof. by []. Qed.
@@ -2709,12 +2759,29 @@ Proof. by rewrite (inv_eq invrK) invr1. Qed.
 Lemma rev_unitrP (x y : R^c) : y * x = 1 /\ x * y = 1 -> x \is a unit.
 Proof. by case=> [yx1 xy1]; apply/unitrP; exists y. Qed.
 
-HB.instance Definition xxx1 : has_mul_inverse R^c :=
-  has_mul_inverse.Build R^c mulrV mulVr rev_unitrP invr_out.
-HB.instance Definition xxx2 : has_mul_inverse R^o :=
-  has_mul_inverse.Build R^o mulVr mulrV unitrP_subproof invr_out.
+End UnitRingTheory.
 
-Section ClosedPredicates.
+Arguments invrK {R}.
+Arguments invr_inj {R} [x1 x2].
+
+Module RegularConverseUnitRingExports.
+Section UnitRingTheory.
+Variable R : unitRingType.
+Implicit Types x y : R.
+
+HB.instance Definition xxx1 : has_mul_inverse R^c :=
+  has_mul_inverse.Build R^c (@mulrV R) (@mulVr R) (@rev_unitrP R) (@invr_out R).
+HB.instance Definition xxx2 : has_mul_inverse R^o :=
+  has_mul_inverse.Build R^o (@mulVr R) (@mulrV R)
+    (@unitrP_subproof R) (@invr_out R).
+End UnitRingTheory.
+End RegularConverseUnitRingExports.
+HB.export RegularConverseUnitRingExports.
+
+Section UnitRingClosedPredicates.
+
+Variable R : unitRingType.
+Implicit Types x y : R.
 
 Variables S : {pred R}.
 
@@ -2733,7 +2800,7 @@ by case=> S1 Sdiv; split=> // x y Sx Sy; rewrite -[y]invrK -[y^-1]mul1r !Sdiv.
 Qed.
 
 Lemma sdivr_closed_div : sdivr_closed -> divr_closed.
-Proof. by case=> SN1 Sdiv; split; rewrite // -(divrr unitrN1) Sdiv. Qed.
+Proof. by case=> SN1 Sdiv; split; rewrite // -(divrr (@unitrN1 _)) Sdiv. Qed.
 
 Lemma sdivr_closedM : sdivr_closed -> smulr_closed S.
 Proof.
@@ -2749,12 +2816,7 @@ case=> S1 SB Sdiv; split; rewrite ?zmod_closedN //.
 exact/subring_closedB/divring_closedBM.
 Qed.
 
-End ClosedPredicates.
-
-End UnitRingTheory.
-
-Arguments invrK {R}.
-Arguments invr_inj {R} [x1 x2].
+End UnitRingClosedPredicates.
 
 Section UnitRingMorphism.
 
@@ -2780,6 +2842,13 @@ End UnitRingMorphism.
 #[mathcomp]
 HB.structure Definition ComUnitRing := {R of ComRing R & UnitRing R}.
 
+Module ComUnitRingExports.
+Notation comUnitRingType := ComUnitRing.type.
+Notation "[ 'comUnitRingType' 'of' T ]" := (ComUnitRing.clone T _)
+  (at level 0, format "[ 'comUnitRingType'  'of'  T ]") : form_scope.
+End ComUnitRingExports.
+HB.export ComUnitRingExports.
+
 HB.factory Record is_ComUnitRing R of ComRing R := {
   unit : {pred R};
   inv : R -> R;
@@ -2801,27 +2870,27 @@ HB.instance Definition mulinverse : has_mul_inverse R :=
 
 HB.end.
 
-Notation comUnitRingType := ComUnitRing.type.
-Notation "[ 'comUnitRingType' 'of' T ]" := (ComUnitRing.clone T _)
-  (at level 0, format "[ 'comUnitRingType'  'of'  T ]") : form_scope.
-
 #[mathcomp]
 HB.structure Definition UnitAlgebra R := {V of Algebra R V & UnitRing V}.
 
+Module UnitAlgebraExports.
 Definition unitAlgType_of (R : ringType) (phR : phant R) := UnitAlgebra.type R.
 Notation unitAlgType R := (unitAlgType_of (Phant R)).
 Notation "[ 'unitAlgType' R 'of' T ]" := (UnitAlgebra.clone [ringType of R] T _)
   (at level 0, format "[ 'unitAlgType'  R  'of'  T ]") : form_scope.
-
-
+End UnitAlgebraExports.
+HB.export UnitAlgebraExports.
 
 #[mathcomp]
 HB.structure Definition ComUnitAlgebra R := {V of ComAlgebra R V & UnitRing V}.
 
+Module ComUnitAlgebraExports.
 Definition comUnitAlgType_of (R : ringType) (phR : phant R) := ComUnitAlgebra.type R.
 Notation comUnitAlgType R := (comUnitAlgType_of (Phant R)).
 Notation "[ 'comUnitAlgType' R 'of' T ]" := (ComUnitAlgebra.clone [ringType of R] T _)
   (at level 0, format "[ 'comUnitAlgType'  R  'of'  T ]") : form_scope.
+End ComUnitAlgebraExports.
+HB.export ComUnitAlgebraExports.
 
 Section ComUnitRingTheory.
 
@@ -2849,11 +2918,20 @@ Proof. by move=> Ux y Uy; rewrite /= invrM ?unitrV // invrK mulrC divrK. Qed.
 Lemma expr_div_n x y n : (x / y) ^+ n = x ^+ n / y ^+ n.
 Proof. by rewrite exprMn exprVn. Qed.
 
+End ComUnitRingTheory.
+
+Module RegularConverseComUnitRingExports.
+Section ComUnitRingTheory.
+
+Variable R : comUnitRingType.
+Implicit Types x y : R.
+
 (* TODO: HB.recover_all_instances (R^o). *)
 HB.instance (R^c) (xxx1 R).
 HB.instance (R^o) (xxx2 R).
-
 End ComUnitRingTheory.
+End RegularConverseComUnitRingExports.
+HB.export RegularConverseComUnitRingExports.
 
 Section UnitAlgebraTheory.
 
@@ -3974,12 +4052,15 @@ HB.mixin Record is_integral R of Ring R := {
 #[mathcomp(axiom = "integral_domain_axiom")]
 HB.structure Definition IntegralDomain := {R of is_integral R & ComUnitRing R}.
 
+Module IntegralDomainExports.
 Notation idomainType := IntegralDomain.type.
 Notation IdomainType T m := (IntegralDomain.pack T m).
 Notation "[ 'idomainType' 'of' T 'for' cT ]" := (IntegralDomain.clone T cT)
   (at level 0, format "[ 'idomainType'  'of'  T  'for'  cT ]") : form_scope.
 Notation "[ 'idomainType' 'of' T ]" := (IntegralDomain.clone T _)
   (at level 0, format "[ 'idomainType'  'of'  T ]") : form_scope.
+End IntegralDomainExports.
+HB.export IntegralDomainExports.
 
 Section IntegralDomainTheory.
 
@@ -4094,11 +4175,17 @@ Proof. by apply: (iffP idP) => [/mulfI | /lreg_neq0]. Qed.
 Lemma rregP x : reflect (rreg x) (x != 0).
 Proof. by apply: (iffP idP) => [/mulIf | /rreg_neq0]. Qed.
 
+End IntegralDomainTheory.
+
+Module RegularIdomainExports.
+Section IntegralDomainTheory.
+Variable R : idomainType.
 (* TODO: HB.instance Definition _ : is_integral R^o := alias R. *)
 HB.instance Definition regular_integral : is_integral R^o :=
   is_integral.Build (R^o) mulf_eq0_subproof.
-
 End IntegralDomainTheory.
+End RegularIdomainExports.
+HB.export RegularIdomainExports.
 
 Arguments lregP {R x}.
 Arguments rregP {R x}.
@@ -4112,12 +4199,21 @@ HB.mixin Record is_field R of UnitRing R := {
 #[mathcomp(axiom = "field_axiom")]
 HB.structure Definition Field := { R of IntegralDomain R & is_field R }.
 
+Module FieldExports.
 Notation fieldType := Field.type.
 Notation FieldType T m := (Field.pack T _ m).
 Notation "[ 'fieldType' 'of' T 'for' cT ]" := (Field.clone T cT)
   (at level 0, format "[ 'fieldType'  'of'  T  'for'  cT ]") : form_scope.
 Notation "[ 'fieldType' 'of' T ]" := (Field.clone T _)
   (at level 0, format "[ 'fieldType'  'of'  T ]") : form_scope.
+
+Section FieldTheory.
+Variable F : fieldType.
+HB.instance Definition regular_field : is_field F^o :=
+  is_field.Build F^o fieldP.
+End FieldTheory.
+End FieldExports.
+HB.export FieldExports.
 
 Lemma IdomainMixin (R : unitRingType): Field.axiom R -> IntegralDomain.axiom R.
 Proof.
@@ -4286,9 +4382,6 @@ Proof. by move=> x y; rewrite rmorphM fmorphV. Qed.
 
 End FieldMorphismInv.
 
-HB.instance Definition regular_field : is_field F^o :=
-  is_field.Build F^o fieldP.
-
 Section ModuleTheory.
 
 Variable V : lmodType F.
@@ -4355,12 +4448,15 @@ HB.mixin Record is_decidable_field R of UnitRing R := {
 #[mathcomp(axiom = "decidable_field_axiom")]
 HB.structure Definition DecidableField := { F of Field F & is_decidable_field F }.
 
+Module DecFieldExports.
 Notation decFieldType := DecidableField.type.
 Notation DecFieldType T m := (DecidableField.pack T m).
 Notation "[ 'decFieldType' 'of' T 'for' cT ]" := (DecidableField.clone T cT)
   (at level 0, format "[ 'decFieldType'  'of'  T  'for'  cT ]") : form_scope.
 Notation "[ 'decFieldType' 'of' T ]" := (DecidableField.clone T _)
   (at level 0, format "[ 'decFieldType'  'of'  T ]") : form_scope.
+End DecFieldExports.
+HB.export DecFieldExports.
 
 Section DecidableFieldTheory.
 
@@ -4552,12 +4648,15 @@ HB.mixin Record is_closed_field F of Field F := {
 #[mathcomp(axiom = "closed_field_axiom")]
 HB.structure Definition ClosedField := { F of Field F & is_closed_field F }.
 
+Module ClosedFieldExports.
 Notation closedFieldType := ClosedField.type.
 Notation ClosedFieldType T m := (ClosedField.pack T m).
 Notation "[ 'closedFieldType' 'of' T 'for' cT ]" := (ClosedField.clone T cT)
   (at level 0, format "[ 'closedFieldType'  'of'  T  'for'  cT ]") : form_scope.
 Notation "[ 'closedFieldType' 'of' T ]" := (ClosedField.clone T _)
   (at level 0, format "[ 'closedFieldType'  'of'  T ]") : form_scope.
+End ClosedFieldExports.
+HB.export ClosedFieldExports.
 
 Section ClosedFieldTheory.
 
@@ -4909,16 +5008,16 @@ Lemma fieldMixin (F : fieldType) (K : unitRingType) (f : K -> F) :
   @Field.axiom K.
 Proof. by move=> _ injf f0 fU u; rewrite -fU unitfE -f0 inj_eq. Qed.
 
-Module Exports.
+Module SubExports.
 
-Notation "[ 'zmodMixin' 'of' U 'by' <: ]" := (zmodMixin (Phant U))
-  (at level 0, format "[ 'zmodMixin'  'of'  U  'by'  <: ]") : form_scope.
-Notation "[ 'ringMixin' 'of' R 'by' <: ]" :=
-  (@ringMixin _ _ _ _ _ _ (@erefl Type R%type) (rrefl _))
-  (at level 0, format "[ 'ringMixin'  'of'  R  'by'  <: ]") : form_scope.
-Notation "[ 'lmodMixin' 'of' U 'by' <: ]" :=
-  (@lmodMixin _ _ _ _ _ _ _ (@erefl Type U%type) (rrefl _))
-  (at level 0, format "[ 'lmodMixin'  'of'  U  'by'  <: ]") : form_scope.
+(* Notation "[ 'zmodMixin' 'of' U 'by' <: ]" := (zmodMixin (Phant U)) *)
+(*   (at level 0, format "[ 'zmodMixin'  'of'  U  'by'  <: ]") : form_scope. *)
+(* Notation "[ 'ringMixin' 'of' R 'by' <: ]" := *)
+(*   (@ringMixin _ _ _ _ _ _ (@erefl Type R%type) (rrefl _)) *)
+(*   (at level 0, format "[ 'ringMixin'  'of'  R  'by'  <: ]") : form_scope. *)
+(* Notation "[ 'lmodMixin' 'of' U 'by' <: ]" := *)
+(*   (@lmodMixin _ _ _ _ _ _ _ (@erefl Type U%type) (rrefl _)) *)
+(*   (at level 0, format "[ 'lmodMixin'  'of'  U  'by'  <: ]") : form_scope. *)
 Notation "[ 'lalgMixin' 'of' A 'by' <: ]" :=
   ((lalgMixin (Phant A) val_inj (rrefl _)) *%R (rrefl _))
   (at level 0, format "[ 'lalgMixin'  'of'  A  'by'  <: ]") : form_scope.
@@ -4928,9 +5027,9 @@ Notation "[ 'comRingMixin' 'of' R 'by' <: ]" :=
 Notation "[ 'algMixin' 'of' A 'by' <: ]" :=
   (algMixin (Phant A) val_inj (rrefl _) (rrefl _))
   (at level 0, format "[ 'algMixin'  'of'  A  'by'  <: ]") : form_scope.
-Notation "[ 'unitRingMixin' 'of' R 'by' <: ]" :=
-  (@unitRingMixin _ _ _ _ _ _ (@erefl Type R%type) (erefl _) (rrefl _))
-  (at level 0, format "[ 'unitRingMixin'  'of'  R  'by'  <: ]") : form_scope.
+(* Notation "[ 'unitRingMixin' 'of' R 'by' <: ]" := *)
+(*   (@unitRingMixin _ _ _ _ _ _ (@erefl Type R%type) (erefl _) (rrefl _)) *)
+(*   (at level 0, format "[ 'unitRingMixin'  'of'  R  'by'  <: ]") : form_scope. *)
 Notation "[ 'idomainMixin' 'of' R 'by' <: ]" :=
   (idomainMixin (Phant R) val_inj (erefl _) (rrefl _))
   (at level 0, format "[ 'idomainMixin'  'of'  R  'by'  <: ]") : form_scope.
@@ -4938,16 +5037,15 @@ Notation "[ 'fieldMixin' 'of' F 'by' <: ]" :=
   (fieldMixin (Phant F) val_inj (erefl _) (frefl _))
   (at level 0, format "[ 'fieldMixin'  'of'  F  'by'  <: ]") : form_scope.
 
-End Exports.
-
-End SubType.
+End SubExports.
+HB.export SubExports.
 
 Module Theory.
 
-Definition addrA := addrA.
-Definition addrC := addrC.
-Definition add0r := add0r.
-Definition addNr := addNr.
+Definition addrA := @addrA.
+Definition addrC := @addrC.
+Definition add0r := @add0r.
+Definition addNr := @addNr.
 Definition addr0 := addr0.
 Definition addrN := addrN.
 Definition subrr := subrr.
@@ -5007,12 +5105,12 @@ Definition mulrnBl := mulrnBl.
 Definition mulrnBr := mulrnBr.
 Definition mulrnA := mulrnA.
 Definition mulrnAC := mulrnAC.
-Definition mulrA := mulrA.
-Definition mul1r := mul1r.
-Definition mulr1 := mulr1.
-Definition mulrDl := mulrDl.
-Definition mulrDr := mulrDr.
-Definition oner_neq0 := oner_neq0.
+Definition mulrA := @mulrA.
+Definition mul1r := @mul1r.
+Definition mulr1 := @mulr1.
+Definition mulrDl := @mulrDl.
+Definition mulrDr := @mulrDr.
+Definition oner_neq0 := @oner_neq0.
 Definition oner_eq0 := oner_eq0.
 Definition mul0r := mul0r.
 Definition mulr0 := mulr0.
@@ -5122,7 +5220,7 @@ Definition oppr_char2 := oppr_char2.
 Definition addrK_char2 := addrK_char2.
 Definition addKr_char2 := addKr_char2.
 Definition prodr_const := prodr_const.
-Definition mulrC := mulrC.
+Definition mulrC := @mulrC.
 Definition mulrCA := mulrCA.
 Definition mulrAC := mulrAC.
 Definition mulrACA := mulrACA.
@@ -5254,7 +5352,7 @@ Definition divfI := divfI.
 Definition divIf := divIf.
 Definition sqrf_eq1 := sqrf_eq1.
 Definition expfS_eq1 := expfS_eq1.
-Definition fieldP := fieldP.
+Definition fieldP := @fieldP.
 Definition unitfE := unitfE.
 Definition mulVf := mulVf.
 Definition mulfV := mulfV.
@@ -5284,7 +5382,7 @@ Definition eq_sat := eq_sat.
 Definition solP {F n f} := @solP F n f.
 Definition eq_sol := eq_sol.
 Definition size_sol := size_sol.
-Definition solve_monicpoly := solve_monicpoly.
+Definition solve_monicpoly := @solve_monicpoly.
 Definition raddf0 := raddf0.
 Definition raddf_eq0 := raddf_eq0.
 Definition raddfN := raddfN.
@@ -5332,9 +5430,9 @@ Definition fmorph_unit := fmorph_unit.
 Definition fmorphV := fmorphV.
 Definition fmorph_div := fmorph_div.
 Definition scalerA := scalerA.
-Definition scale1r := scale1r.
-Definition scalerDr := scalerDr.
-Definition scalerDl := scalerDl.
+Definition scale1r := @scale1r.
+Definition scalerDr := @scalerDr.
+Definition scalerDl := @scalerDl.
 Definition scaler0 := scaler0.
 Definition scale0r := scale0r.
 Definition scaleNr := scaleNr.
@@ -5351,12 +5449,12 @@ Definition scaler_eq0 := scaler_eq0.
 Definition scalerK := scalerK.
 Definition scalerKV := scalerKV.
 Definition scalerI := scalerI.
-Definition scalerAl := scalerAl.
+Definition scalerAl := @scalerAl.
 Definition mulr_algl := mulr_algl.
 Definition scaler_sign := scaler_sign.
 Definition signrZK := signrZK.
 Definition scalerCA := scalerCA.
-Definition scalerAr := scalerAr.
+Definition scalerAr := @scalerAr.
 Definition mulr_algr := mulr_algr.
 Definition comm_alg := comm_alg.
 Definition exprZn := exprZn.
@@ -5398,18 +5496,15 @@ End Theory.
 
 Notation in_alg A := (in_alg_loc A).
 
+Module AllExports. HB.reexport. End AllExports.
+
 End GRing.
 
-Export Zmodule.Exports Ring.Exports Lmodule.Exports Lalgebra.Exports.
+Export AllExports.
 Export Additive.Exports RMorphism.Exports Linear.Exports LRMorphism.Exports.
-Export Algebra.Exports UnitRing.Exports UnitAlgebra.Exports.
-Export ComRing.Exports ComAlgebra.Exports ComUnitRing.Exports.
-Export ComUnitAlgebra.Exports IntegralDomain.Exports Field.Exports.
-Export DecidableField.Exports ClosedField.Exports.
-Export Pred.Exports SubType.Exports.
-Notation QEdecFieldMixin := QEdecFieldMixin.
+Export Pred.Exports.
 
-Notation "0" := (zero _) : ring_scope.
+Notation "0" := (@zero _) : ring_scope.
 Notation "-%R" := (@opp _) : ring_scope.
 Notation "- x" := (opp x) : ring_scope.
 Notation "+%R" := (@add _).
@@ -5420,7 +5515,7 @@ Notation "x *- n" := (opp (x *+ n)) : ring_scope.
 Notation "s `_ i" := (seq.nth 0%R s%R i) : ring_scope.
 Notation support := 0.-support.
 
-Notation "1" := (one _) : ring_scope.
+Notation "1" := (@one _) : ring_scope.
 Notation "- 1" := (opp 1) : ring_scope.
 
 Notation "n %:R" := (natmul 1 n) : ring_scope.
@@ -5534,28 +5629,7 @@ Canonical in_alg_additive.
 Canonical in_alg_rmorphism.
 
 Notation "R ^c" := (converse R) (at level 2, format "R ^c") : type_scope.
-Canonical converse_eqType.
-Canonical converse_choiceType.
-Canonical converse_zmodType.
-Canonical converse_ringType.
-Canonical converse_unitRingType.
-
 Notation "R ^o" := (regular R) (at level 2, format "R ^o") : type_scope.
-Canonical regular_eqType.
-Canonical regular_choiceType.
-Canonical regular_zmodType.
-Canonical regular_ringType.
-Canonical regular_lmodType.
-Canonical regular_lalgType.
-Canonical regular_comRingType.
-Canonical regular_algType.
-Canonical regular_unitRingType.
-Canonical regular_comUnitRingType.
-Canonical regular_unitAlgType.
-Canonical regular_comAlgType.
-Canonical regular_comUnitAlgType.
-Canonical regular_idomainType.
-Canonical regular_fieldType.
 
 Canonical unit_keyed.
 Canonical unit_opprPred.
@@ -5595,6 +5669,7 @@ Section FinFunZmod.
 Variable (aT : finType) (rT : zmodType).
 Implicit Types f g : {ffun aT -> rT}.
 
+
 Definition ffun_zero := [ffun a : aT => (0 : rT)].
 Definition ffun_opp f := [ffun a => - f a].
 Definition ffun_add f g := [ffun a => f a + g a].
@@ -5608,9 +5683,8 @@ Proof. by move=> f; apply/ffunP=> a; rewrite !ffunE add0r. Qed.
 Fact ffun_addN : left_inverse ffun_zero ffun_opp ffun_add.
 Proof. by move=> f; apply/ffunP=> a; rewrite !ffunE addNr. Qed.
 
-Definition ffun_zmodMixin :=
-  Zmodule.Mixin ffun_addA ffun_addC ffun_add0 ffun_addN.
-Canonical ffun_zmodType := Eval hnf in ZmodType _ ffun_zmodMixin.
+HB.instance Definition _  := is_Zmodule.Build {ffun aT -> rT}
+  ffun_addA ffun_addC ffun_add0 ffun_addN.
 
 Section Sum.
 
@@ -5653,11 +5727,9 @@ Proof. by move=> f1 f2 f3; apply/ffunP=> i; rewrite !ffunE mulrDr. Qed.
 Fact ffun1_nonzero : ffun_one != 0.
 Proof. by apply/eqP => /ffunP/(_ a)/eqP; rewrite !ffunE oner_eq0. Qed.
 
-Definition ffun_ringMixin :=
-  RingMixin ffun_mulA ffun_mul_1l ffun_mul_1r ffun_mul_addl ffun_mul_addr
-            ffun1_nonzero.
-Definition ffun_ringType :=
-  Eval hnf in RingType {ffun aT -> R} ffun_ringMixin.
+HB.instance Definition _ := is_Ring_of_Zmodule.Build {ffun aT -> R}
+  ffun_mulA ffun_mul_1l ffun_mul_1r ffun_mul_addl ffun_mul_addr ffun1_nonzero.
+Definition ffun_ring := ([the ringType of {ffun aT -> R}] : Type).
 
 End FinFunRing.
 
@@ -5668,8 +5740,8 @@ Variable (aT : finType) (R : comRingType) (a : aT).
 Fact ffun_mulC : commutative (@ffun_mul aT R).
 Proof. by move=> f1 f2; apply/ffunP=> i; rewrite !ffunE mulrC. Qed.
 
-Definition ffun_comRingType :=
-  Eval hnf in ComRingType (ffun_ringType R a) ffun_mulC.
+(* FIXME *)
+HB.instance Definition _ := commutative_mul.Build (ffun_ring _ a) ffun_mulC.
 
 End FinFunComRing.
 
@@ -5691,10 +5763,8 @@ Proof. by move=> f g; apply/ffunP=> a; rewrite !ffunE scalerDr. Qed.
 Fact ffun_scale_addl u : {morph (ffun_scale)^~ u : k1 k2 / k1 + k2}.
 Proof. by move=> k1 k2; apply/ffunP=> a; rewrite !ffunE scalerDl. Qed.
 
-Definition ffun_lmodMixin :=
-  LmodMixin ffun_scaleA ffun_scale1 ffun_scale_addr ffun_scale_addl.
-Canonical ffun_lmodType :=
-  Eval hnf in LmodType R {ffun aT -> rT} ffun_lmodMixin.
+HB.instance Definition _ := is_Lmodule_of_Zmodule.Build R {ffun aT -> rT}
+  ffun_scaleA ffun_scale1 ffun_scale_addr ffun_scale_addl.
 
 End FinFunLmod.
 
@@ -5718,8 +5788,8 @@ Proof. by case=> x1 x2; congr (_, _); apply: add0r. Qed.
 Fact pair_addN : left_inverse (0, 0) opp_pair add_pair.
 Proof. by move=> x; congr (_, _); apply: addNr. Qed.
 
-Definition pair_zmodMixin := ZmodMixin pair_addA pair_addC pair_add0 pair_addN.
-Canonical pair_zmodType := Eval hnf in ZmodType (M1 * M2) pair_zmodMixin.
+HB.instance Definition _ := is_Zmodule.Build (M1 * M2)%type
+  pair_addA pair_addC pair_add0 pair_addN.
 
 End PairZmod.
 
@@ -5747,9 +5817,8 @@ Proof. by move=> x y z; congr (_, _); apply: mulrDr. Qed.
 Fact pair_one_neq0 : (1, 1) != 0 :> R1 * R2.
 Proof. by rewrite xpair_eqE oner_eq0. Qed.
 
-Definition pair_ringMixin :=
-  RingMixin pair_mulA pair_mul1l pair_mul1r pair_mulDl pair_mulDr pair_one_neq0.
-Canonical pair_ringType := Eval hnf in RingType (R1 * R2) pair_ringMixin.
+HB.instance Definition _ := is_Ring_of_Zmodule.Build (R1 * R2)%type
+   pair_mulA pair_mul1l pair_mul1r pair_mulDl pair_mulDr pair_one_neq0.
 
 End PairRing.
 
@@ -5760,7 +5829,7 @@ Variables R1 R2 : comRingType.
 Fact pair_mulC : commutative (@mul_pair R1 R2).
 Proof. by move=> x y; congr (_, _); apply: mulrC. Qed.
 
-Canonical pair_comRingType := Eval hnf in ComRingType (R1 * R2) pair_mulC.
+HB.instance Definition _ := commutative_mul.Build (R1 * R2)%type pair_mulC.
 
 End PairComRing.
 
@@ -5782,9 +5851,8 @@ Proof. by move=> a u v; congr (_, _); apply: scalerDr. Qed.
 Fact pair_scaleDl u : {morph scale_pair^~ u: a b / a + b}.
 Proof. by move=> a b; congr (_, _); apply: scalerDl. Qed.
 
-Definition pair_lmodMixin :=
-  LmodMixin pair_scaleA pair_scale1 pair_scaleDr pair_scaleDl.
-Canonical pair_lmodType := Eval hnf in LmodType R (V1 * V2) pair_lmodMixin.
+HB.instance Definition _ := is_Lmodule_of_Zmodule.Build R (V1 * V2)%type
+  pair_scaleA pair_scale1 pair_scaleDr pair_scaleDl.
 
 End PairLmod.
 
@@ -5794,7 +5862,9 @@ Variables (R : ringType) (A1 A2 : lalgType R).
 
 Fact pair_scaleAl a (u v : A1 * A2) : a *: (u * v) = (a *: u) * v.
 Proof. by congr (_, _); apply: scalerAl. Qed.
-Canonical pair_lalgType :=  Eval hnf in LalgType R (A1 * A2) pair_scaleAl.
+
+HB.instance Definition _ := is_Lalgebra_of_Lmodule.Build R (A1 * A2)%type
+  pair_scaleAl.
 
 End PairLalg.
 
@@ -5804,7 +5874,10 @@ Variables (R : comRingType) (A1 A2 : algType R).
 
 Fact pair_scaleAr a (u v : A1 * A2) : a *: (u * v) = u * (a *: v).
 Proof. by congr (_, _); apply: scalerAr. Qed.
-Canonical pair_algType :=  Eval hnf in AlgType R (A1 * A2) pair_scaleAr.
+
+(* FIXME !!*)
+Time HB.instance Definition _ := is_Algebra_of_Lalgebra.Build R (A1 * A2)%type
+  pair_scaleAr.
 
 End PairAlg.
 
@@ -5838,18 +5911,22 @@ Qed.
 Lemma pair_invr_out : {in [predC pair_unitr], pair_invr =1 id}.
 Proof. by rewrite /pair_invr => x /negPf/= ->. Qed.
 
-Definition pair_unitRingMixin :=
-  UnitRingMixin pair_mulVl pair_mulVr pair_unitP pair_invr_out.
-Canonical pair_unitRingType :=
-  Eval hnf in UnitRingType (R1 * R2) pair_unitRingMixin.
+HB.instance Definition _ := has_mul_inverse.Build (R1 * R2)%type
+  pair_mulVl pair_mulVr pair_unitP pair_invr_out.
 
 End PairUnitRing.
 
-Canonical pair_comUnitRingType (R1 R2 : comUnitRingType) :=
-  Eval hnf in [comUnitRingType of R1 * R2].
+(* HB BUG: complete graph using parameters;... but might not be unique :((( *)
+HB.instance Definition _ (R1 R2 : comUnitRingType) :=
+  has_mul_inverse.Build (R1 * R2)%type
+    (@pair_mulVl R1 R2) (@pair_mulVr R1 R2) (@pair_unitP R1 R2)
+    (@pair_invr_out R1 R2).
 
-Canonical pair_unitAlgType (R : comUnitRingType) (A1 A2 : unitAlgType R) :=
-  Eval hnf in [unitAlgType R of A1 * A2].
+(* FIXME !! *)
+Time HB.instance Definition _ (R : comUnitRingType) (A1 A2 : unitAlgType R) :=
+  has_mul_inverse.Build (A1 * A2)%type
+    (@pair_mulVl A1 A2) (@pair_mulVr A1 A2) (@pair_unitP A1 A2)
+    (@pair_invr_out A1 A2).
 
 Lemma pairMnE (M1 M2 : zmodType) (x : M1 * M2) n :
   x *+ n = (x.1 *+ n, x.2 *+ n).

@@ -508,10 +508,10 @@ Definition eq_comparable (T : eqType) : comparable T :=
   fun x y => decP (x =P y).
 
 HB.mixin Record is_SUB (T : Type) (P : pred T) (sub_sort : indexed Type) := SubType {
-  val : sub_sort -> T;
+  val_subdef : sub_sort -> T;
   Sub : forall x, P x -> sub_sort;
   Sub_rect : forall K (_ : forall x Px, K (@Sub x Px)) u, K u;
-  SubK_subproof : forall x Px, val (@Sub x Px) = x
+  SubK_subproof : forall x Px, val_subdef (@Sub x Px) = x
 }.
 
 HB.structure Definition SUB (T : Type) (P : pred T) := { S of is_SUB T P S }.
@@ -522,9 +522,9 @@ HB.structure Definition subEquality T (P : pred T) :=
   { sT of Equality sT & is_SUB T P sT}.
 
 Notation subEqType := subEquality.type.
-Notation val := (is_SUB.val (SUB.class _)).
-Notation "\val" := (is_SUB.val (SUB.class _)) (only parsing).
-Notation "\val" := (is_SUB.val _) (only printing).
+Notation val := (is_SUB.val_subdef (SUB.class _)).
+Notation "\val" := (is_SUB.val_subdef (SUB.class _)) (only parsing).
+Notation "\val" := (is_SUB.val_subdef _) (only printing).
 
 Section SubType.
 
@@ -539,7 +539,7 @@ Section Theory.
 
 Variable sT : subType P.
 
-Local Notation val := (is_SUB.val (SUB.class sT)).
+Local Notation val := (is_SUB.val_subdef (SUB.class sT)).
 Local Notation Sub := (@Sub _ _ sT).
 
 Lemma SubK x Px : val (@Sub x Px) = x. Proof. exact: SubK_subproof. Qed.

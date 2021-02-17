@@ -7,12 +7,12 @@
   select = "coq-8.13";
   inputs."coq-8.13".coqPackages = {
     coq.override.version = "8.13";
-    hierarchy-builder.override.version = "master";
+    hierarchy-builder.override.version = "exports";
     # /home/cyril/git/hierarchy-builder/master;
   };
   inputs."coq-8.12".coqPackages = {
     coq.override.version = "8.12";
-    hierarchy-builder.override.version = "master";
+    hierarchy-builder.override.version = "exports";
     # /home/cyril/git/hierarchy-builder/master;
   };
 }
