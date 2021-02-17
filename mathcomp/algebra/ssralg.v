@@ -1476,12 +1476,12 @@ HB.mixin Record is_Lmodule_of_Zmodule (R : ringType) V of Zmodule V := {
   scalerDr : right_distributive scale +%R;
   scalerDl : forall v, {morph scale^~ v: a b / a + b}
 }.
-#[mathcomp] HB.structure Definition Lmodule (R : ringType) :=
+#[mathcomp, infer(R)]
+HB.structure Definition Lmodule (R : ringType) :=
   {M of Zmodule M & is_Lmodule_of_Zmodule R M}.
 
 Module LmodExports.
-Definition lmodType_of (R : ringType) (phR : phant R) := Lmodule.type R.
-Notation lmodType R := (lmodType_of (Phant R)).
+Notation lmodType R := (Lmodule.type R).
 Notation LmodType R T m := (@Lmodule.pack [the ringType of R] T m).
 Notation LmodMixin := Lmodule.Mixin.
 Notation "[ 'lmodType' R 'of' T 'for' cT ]" :=
@@ -1584,12 +1584,12 @@ HB.mixin Record is_Lalgebra_of_Lmodule (R : ringType) V of
   Ring V & Lmodule R V := {
     scalerAl : forall (a : R) (u v : V), a *: (u * v) = (a *: u) * v
 }.
-#[mathcomp] HB.structure Definition Lalgebra (R : ringType) :=
+#[mathcomp, infer(R)]
+HB.structure Definition Lalgebra (R : ringType) :=
   {A of is_Lalgebra_of_Lmodule R A &}.
 
 Module LalgExports.
-Definition lalgType_of (R : ringType) (phR : phant R) := Lalgebra.type R.
-Notation lalgType R := (lalgType_of (Phant R)).
+Notation lalgType R := (Lalgebra.type R).
 (* BUG: [ringType of R] fails with coqc but succeeds with coqtop *)
 Notation LalgType R T m := (Lalgebra.pack [the ringType of R] T m).
 Notation LalgMixin := Lalgebra.Mixin.
@@ -2461,12 +2461,12 @@ End ComRingTheory.
 HB.mixin Record is_Algebra_of_Lalgebra (R : ringType) V of Lalgebra R V := {
   scalerAr : forall k (x y : V), k *: (x * y) = x * (k *: y);
 }.
-#[mathcomp] HB.structure Definition Algebra (R : ringType) :=
+#[mathcomp, infer(R)]
+HB.structure Definition Algebra (R : ringType) :=
   {A of is_Algebra_of_Lalgebra R A &}.
 
 Module AlgExports.
-Definition algType_of (R : ringType) (phR : phant R) := Algebra.type R.
-Notation algType R := (algType_of (Phant R)).
+Notation algType R := (Algebra.type R).
 (* BUG: [ringType of R] fails with coqc but succeeds with coqtop *)
 Notation AlgType R A ax := (Algebra.pack [the ringType of R] A ax).
 Notation "[ 'algType' R 'of' T 'for' cT ]" :=
@@ -2489,17 +2489,16 @@ HB.instance Definition lalgebra_is_algebra : is_Algebra_of_Lalgebra R V :=
 
 HB.end.
 
-#[mathcomp] HB.structure Definition ComAlgebra R := {V of is_ComAlgebra R V &}.
+#[mathcomp, infer(R)]
+HB.structure Definition ComAlgebra R := {V of is_ComAlgebra R V &}.
 
 Module ComAlgExports.
-Definition comAlgType_of (R : ringType) (phR : phant R) := ComAlgebra.type R.
-Notation comAlgType R := (comAlgType_of (Phant R)).
+Notation comAlgType R := (ComAlgebra.type R).
 Notation "[ 'comAlgType' R 'of' T ]" :=
     (ComAlgebra.clone [the ringType of R] T _)
   (at level 0, format "[ 'comAlgType'  R  'of'  T ]") : form_scope.
 
 Section AlgebraTheory.
-
 Variables (R : comRingType) (A : algType R).
 
 HB.instance Definition converse_comRingType : commutative_mul R^c :=
@@ -2876,12 +2875,11 @@ HB.instance Definition mulinverse : has_mul_inverse R :=
 
 HB.end.
 
-#[mathcomp]
+#[mathcomp, infer(R)]
 HB.structure Definition UnitAlgebra R := {V of Algebra R V & UnitRing V}.
 
 Module UnitAlgebraExports.
-Definition unitAlgType_of (R : ringType) (phR : phant R) := UnitAlgebra.type R.
-Notation unitAlgType R := (unitAlgType_of (Phant R)).
+Notation unitAlgType R := (UnitAlgebra.type R).
 
 (* BUG: [ringType of R] fails with coqc but succeeds with coqtop *)
 Notation "[ 'unitAlgType' R 'of' T ]" :=
@@ -2890,13 +2888,11 @@ Notation "[ 'unitAlgType' R 'of' T ]" :=
 End UnitAlgebraExports.
 HB.export UnitAlgebraExports.
 
-#[mathcomp]
+#[mathcomp, infer(R)]
 HB.structure Definition ComUnitAlgebra R := {V of ComAlgebra R V & UnitRing V}.
 
 Module ComUnitAlgebraExports.
-Definition comUnitAlgType_of (R : ringType) (phR : phant R) :=
-  ComUnitAlgebra.type R.
-Notation comUnitAlgType R := (comUnitAlgType_of (Phant R)).
+Notation comUnitAlgType R := (ComUnitAlgebra.type R).
 (* BUG: [ringType of R] fails with coqc but succeeds with coqtop *)
 Notation "[ 'comUnitAlgType' R 'of' T ]" :=
   (ComUnitAlgebra.clone [the ringType of R] T _)
@@ -4868,9 +4864,8 @@ HB.mixin Record is_SubLmodule (R : ringType) (V : lmodType R) (S : {pred V})
 }.
 
 (* BUG: coercions *)
-HB.structure
-Definition SubLmodule (R : ringType)
-    (V : lmodType (Ring.sort R)) (S : {pred (Lmodule.sort V)}) :=
+HB.structure Definition SubLmodule (R : ringType) (V : lmodType R)
+    (S : {pred (Lmodule.sort V)}) :=
   { W of SubZmodule V S W & is_Lmodule_of_Zmodule R W & is_SubLmodule R V S W}.
 
 Section linear.
