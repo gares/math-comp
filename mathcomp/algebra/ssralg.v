@@ -2892,7 +2892,8 @@ HB.export UnitAlgebraExports.
 HB.structure Definition ComUnitAlgebra R := {V of ComAlgebra R V & UnitRing V}.
 
 Module ComUnitAlgebraExports.
-Definition comUnitAlgType_of (R : ringType) (phR : phant R) := ComUnitAlgebra.type R.
+Definition comUnitAlgType_of (R : ringType) (phR : phant R) :=
+  ComUnitAlgebra.type R.
 Notation comUnitAlgType R := (comUnitAlgType_of (Phant R)).
 (* BUG: [ringType of R] fails with coqc but succeeds with coqtop *)
 Notation "[ 'comUnitAlgType' R 'of' T ]" :=
@@ -4234,7 +4235,8 @@ Qed.
 HB.factory Definition field_of_comunitring R of ComUnitRing R := is_field R.
 HB.builders Context R (f : field_of_comunitring R).
 
-(* TODO: factory aliases should re-export the operation of the original factory *)
+(* TODO: factory aliases should
+  re-export the operation of the original factory *)
 Let p : forall x : R, x != 0 -> x \in unit. Proof. by case f. Defined.
 HB.instance Definition field_is_integral : is_integral R :=
   is_integral.Build R (IdomainMixin p). (* unitfE_subproof from f *)
@@ -4447,8 +4449,8 @@ End FieldTheory.
 
 Arguments fmorph_inj {F R} f [x1 x2].
 
-
-Definition decidable_field_axiom (R : unitRingType) (s : seq R -> pred (formula R)) :=
+Definition decidable_field_axiom (R : unitRingType)
+    (s : seq R -> pred (formula R)) :=
   forall e f, reflect (holds e f) (s e f).
 
 HB.mixin Record is_decidable_field R of UnitRing R := {
@@ -4707,17 +4709,17 @@ Obligation Tactic := idtac.
 Implicit Type V : zmodType.
 
 HB.mixin
-Record is_subZmodule V (S : {pred V}) (U : indexed Type)
+Record is_SubZmodule V (S : {pred V}) (U : indexed Type)
     of SUB V S U & Zmodule U := {
   valB : additive (val : U -> V);
 }.
 
 #[mathcomp]
-HB.structure Definition subZmodule V S :=
-  { U of subChoice V S U & Zmodule U & is_subZmodule V S U }.
+HB.structure Definition SubZmodule V S :=
+  { U of subChoice V S U & Zmodule U & is_SubZmodule V S U }.
 
 Section additive.
-Context V (S : {pred V}) (U : subZmodule.type S).
+Context V (S : {pred V}) (U : SubZmodule.type S).
 Notation val := (val : U -> V).
 Canonical val_additive := Additive (valB : additive val).
 Lemma valD : {morph val : x y / x + y}. Proof. exact: raddfD. Qed.
@@ -4747,7 +4749,7 @@ Next Obligation. by move=> x; apply: injf; rewrite !(fD, fN, f0) addNr. Qed.
 HB.instance U zmodU.
 HB.end.
 
-HB.factory Record pred_subZmodule V (S : {pred V})
+HB.factory Record pred_SubZmodule V (S : {pred V})
     (subS : zmodPred S)
     (kS : keyed_pred subS)
     (U : indexed Type) of subChoice V S U := {}.
@@ -4755,7 +4757,7 @@ HB.factory Record pred_subZmodule V (S : {pred V})
 HB.builders Context (V : zmodType) (S : {pred V})
   (subS : zmodPred S)
   (kS : keyed_pred subS)
-  (U : indexed Type) of pred_subZmodule V S subS kS U.
+  (U : indexed Type) of pred_SubZmodule V S subS kS U.
 
 Let kS_S v : v \in kS -> v \in S. Proof. by rewrite keyed_predE. Qed.
 Let S_kS v : v \in S -> v \in kS. Proof. by rewrite keyed_predE. Qed.
@@ -4774,22 +4776,23 @@ HB.instance U zmodU.
 Lemma valD : additive (val : U -> V).
 Proof. by move=> x y /=; rewrite !SubK. Qed.
 
-HB.instance Definition pred_sub_is_subzmodule := is_subZmodule.Build V S U valD.
+HB.instance Definition pred_sub_is_subzmodule :=
+  is_SubZmodule.Build V S U valD.
 
 HB.end.
 
 HB.mixin
-Record is_subRing (R : ringType) (S : {pred R}) (U : indexed Type)
-    of subZmodule R S U & Ring U := {
+Record is_SubRing (R : ringType) (S : {pred R}) (U : indexed Type)
+    of SubZmodule R S U & Ring U := {
   valM : multiplicative (val : U -> R);
 }.
 
 HB.structure
-Definition subRing (R : ringType) (S : {pred R}) :=
-  { U of subZmodule R S U & Ring U & is_subRing R S U }.
+Definition SubRing (R : ringType) (S : {pred R}) :=
+  { U of SubZmodule R S U & Ring U & is_SubRing R S U }.
 
 Section multiplicative.
-Context (R : ringType) (S : {pred R}) (U : subRing.type S).
+Context (R : ringType) (S : {pred R}) (U : SubRing.type S).
 Notation val := (val : U -> R).
 Canonical val_multiplicative := AddRMorphism (valM : multiplicative val).
 Lemma val1 : val 1 = 1. Proof. exact: rmorph1. Qed.
@@ -4817,13 +4820,13 @@ Next Obligation. by rewrite -(inj_eq injf) raddf0 f1 oner_eq0. Qed.
 HB.instance R ringR.
 HB.end.
 
-HB.factory Record pred_subRing (R : ringType) (S : {pred R})
+HB.factory Record pred_SubRing (R : ringType) (S : {pred R})
   (ringS : subringPred S) (kS : keyed_pred ringS)
-  (U : indexed Type) of subZmodule R S U := {}.
+  (U : indexed Type) of SubZmodule R S U := {}.
 
 HB.builders Context (R : ringType) (S : {pred R})
   (ringS : subringPred S) (kS : keyed_pred ringS)
-  (U : indexed Type) of pred_subRing R S ringS kS U.
+  (U : indexed Type) of pred_SubRing R S ringS kS U.
 
 Let kS_S v : v \in kS -> v \in S. Proof. by rewrite keyed_predE. Qed.
 Let S_kS v : v \in S -> v \in kS. Proof. by rewrite keyed_predE. Qed.
@@ -4839,7 +4842,7 @@ HB.instance U ringU.
 Lemma valM : multiplicative (val : U -> R).
 Proof. by split=> [x y|] /=; rewrite !SubK. Qed.
 
-HB.instance Definition pred_sub_is_ring := is_subRing.Build R S U valM.
+HB.instance Definition pred_sub_is_ring := is_SubRing.Build R S U valM.
 
 HB.end.
 
@@ -4857,19 +4860,19 @@ HB.instance Definition comring :=
 
 HB.end.
 
-HB.mixin Record is_subLmodule (R : ringType) (V : lmodType R) (S : {pred V})
-   (W : indexed Type) of subZmodule V S W & Lmodule R W := {
+HB.mixin Record is_SubLmodule (R : ringType) (V : lmodType R) (S : {pred V})
+   (W : indexed Type) of SubZmodule V S W & Lmodule R W := {
  valZ : scalable (val : W -> V);
 }.
 
 (* BUG: coercions *)
 HB.structure
-Definition subLmodule (R : ringType)
+Definition SubLmodule (R : ringType)
     (V : lmodType (Ring.sort R)) (S : {pred (Lmodule.sort V)}) :=
-  { W of subZmodule V S W & is_Lmodule_of_Zmodule R W & is_subLmodule R V S W}.
+  { W of SubZmodule V S W & is_Lmodule_of_Zmodule R W & is_SubLmodule R V S W}.
 
 Section linear.
-Context (R : ringType) (V : lmodType R) (S : {pred V}) (W : subLmodule.type S).
+Context (R : ringType) (V : lmodType R) (S : {pred V}) (W : SubLmodule.type S).
 Notation val := (val : W -> V).
 Canonical val_linear := AddLinear (valZ : scalable val).
 End linear.
@@ -4896,13 +4899,13 @@ HB.instance U lmodU.
 
 HB.end.
 
-HB.factory Record pred_subLmodule (R : ringType) (V : lmodType R) (S : {pred V})
+HB.factory Record pred_SubLmodule (R : ringType) (V : lmodType R) (S : {pred V})
     (linS : submodPred S) (kS : keyed_pred linS)
-  (U : indexed Type) of subZmodule V S U := {}.
+  (U : indexed Type) of SubZmodule V S U := {}.
 
 HB.builders Context (R : ringType) (V : lmodType R) (S : {pred V})
     (linS : submodPred S) (kS : keyed_pred linS) W
-  of pred_subLmodule R V S linS kS W.
+  of pred_SubLmodule R V S linS kS W.
 
 Let kS_S v : v \in kS -> v \in S. Proof. by rewrite keyed_predE. Qed.
 Let S_kS v : v \in S -> v \in kS. Proof. by rewrite keyed_predE. Qed.
@@ -4915,7 +4918,7 @@ HB.instance W lmodW.
 
 Fact valZ : scalable (val : W -> _). Proof. by move=> k w; rewrite SubK. Qed.
 
-HB.instance Definition lmodsubmixin := is_subLmodule.Build R V S W valZ.
+HB.instance Definition lmodsubmixin := is_SubLmodule.Build R V S W valZ.
 
 HB.end.
 
@@ -4983,17 +4986,17 @@ HB.instance R unitringR.
 
 HB.end.
 
-HB.structure Definition subUnitRing (R : ringType)
+HB.structure Definition SubUnitRing (R : ringType)
     (S : {pred Ring.sort R}) :=
-  {U of subRing R S U & UnitRing U}.
+  {U of SubRing R S U & UnitRing U}.
 
-HB.factory Record pred_subUnitRing (R : unitRingType) (S : {pred R})
+HB.factory Record pred_SubUnitRing (R : unitRingType) (S : {pred R})
   (ringS : divringPred S) (kS : keyed_pred ringS)
-  (U : indexed Type) of subRing R S U := {}.
+  (U : indexed Type) of SubRing R S U := {}.
 
 HB.builders Context (R : unitRingType) (S : {pred R})
   (ringS : divringPred S) (kS : keyed_pred ringS)
-  (U : indexed Type) of pred_subUnitRing R S ringS kS U.
+  (U : indexed Type) of pred_SubUnitRing R S ringS kS U.
 
 Let kS_S v : v \in kS -> v \in S. Proof. by rewrite keyed_predE. Qed.
 Let S_kS v : v \in S -> v \in kS. Proof. by rewrite keyed_predE. Qed.
@@ -5041,7 +5044,8 @@ Notation "[ 'algMixin' 'of' A 'by' <: ]" :=
   (at level 0, format "[ 'algMixin'  'of'  A  'by'  <: ]") : form_scope.
 (* Notation "[ 'unitRingMixin' 'of' R 'by' <: ]" := *)
 (*   (@unitRingMixin _ _ _ _ _ _ (@erefl Type R%type) (erefl _) (rrefl _)) *)
-(*   (at level 0, format "[ 'unitRingMixin'  'of'  R  'by'  <: ]") : form_scope. *)
+(*   (at level 0, format "[ 'unitRingMixin'  'of'  R  'by'  <: ]") : *)
+(* form_scope. *)
 Notation "[ 'idomainMixin' 'of' R 'by' <: ]" :=
   (idomainMixin (Phant R) val_inj (erefl _) (rrefl _))
   (at level 0, format "[ 'idomainMixin'  'of'  R  'by'  <: ]") : form_scope.
