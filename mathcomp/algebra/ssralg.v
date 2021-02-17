@@ -2502,6 +2502,8 @@ Section AlgebraTheory.
 
 Variables (R : comRingType) (A : algType R).
 
+HB.instance Definition converse_comRingType : commutative_mul R^c :=
+  commutative_mul.Build R^c (fun _ _ => mulrC _ _).
 HB.instance Definition regular_comRingType : commutative_mul R^o :=
   commutative_mul.Build R^o mulrC.
 HB.instance Definition regular_comAlgType : is_ComAlgebra R R^o :=
@@ -5892,7 +5894,8 @@ Fact pair_scaleAr a (u v : A1 * A2) : a *: (u * v) = u * (a *: v).
 Proof. by congr (_, _); apply: scalerAr. Qed.
 
 (* FIXME !!*)
-Time HB.instance Definition _ := is_Algebra_of_Lalgebra.Build R (A1 * A2)%type
+Time #[verbose]
+HB.instance Definition _ := is_Algebra_of_Lalgebra.Build R (A1 * A2)%type
   pair_scaleAr.
 
 End PairAlg.
@@ -5927,22 +5930,34 @@ Qed.
 Lemma pair_invr_out : {in [predC pair_unitr], pair_invr =1 id}.
 Proof. by rewrite /pair_invr => x /negPf/= ->. Qed.
 
-HB.instance Definition _ := has_mul_inverse.Build (R1 * R2)%type
+HB.instance Definition UUU := has_mul_inverse.Build (R1 * R2)%type
   pair_mulVl pair_mulVr pair_unitP pair_invr_out.
 
 End PairUnitRing.
 
-(* HB BUG: complete graph using parameters;... but might not be unique :((( *)
-HB.instance Definition _ (R1 R2 : comUnitRingType) :=
-  has_mul_inverse.Build (R1 * R2)%type
-    (@pair_mulVl R1 R2) (@pair_mulVr R1 R2) (@pair_unitP R1 R2)
-    (@pair_invr_out R1 R2).
+(* HB FEATURE: (hard) complete graph using parameters,...*)
+(* HB FEATURE: (easy) types/defs/anything can be a factory *)
+(*    HB.saturate (R1 R2 : comUnitRingType) (R1 * R2)%type *)
+HB.instance Definition _ (R1 R2 : comUnitRingType) := UUU R1 R2.
 
 (* FIXME !! *)
-Time HB.instance Definition _ (R : comUnitRingType) (A1 A2 : unitAlgType R) :=
+Time
+Definition XXX (R : comUnitRingType) (A1 A2 : unitAlgType R) :=
   has_mul_inverse.Build (A1 * A2)%type
     (@pair_mulVl A1 A2) (@pair_mulVr A1 A2) (@pair_unitP A1 A2)
     (@pair_invr_out A1 A2).
+HB.status.
+
+Section XXX.
+Variables (R : comUnitRingType) (A1 A2 : unitAlgType R).
+Time #[verbose] HB.instance ((A1 * A2)%type) (XXX A1 A2).
+End XXX.
+
+(* Time #[verbose] *)
+(* HB.instance Definition _ (R : comUnitRingType) (A1 A2 : unitAlgType R) := *)
+(*   has_mul_inverse.Build (A1 * A2)%type *)
+(*     (@pair_mulVl A1 A2) (@pair_mulVr A1 A2) (@pair_unitP A1 A2) *)
+(*     (@pair_invr_out A1 A2). *)
 
 Lemma pairMnE (M1 M2 : zmodType) (x : M1 * M2) n :
   x *+ n = (x.1 *+ n, x.2 *+ n).
