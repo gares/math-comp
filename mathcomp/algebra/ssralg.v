@@ -1440,7 +1440,8 @@ Section RightRegular.
 
 Variable R : ringType.
 Implicit Types x y : R.
-Let Rc := [ringType of R^c].
+(* BUG: [ringType of R] fails with coqc but succeeds with coqtop *)
+Let Rc := [the ringType of R^c].
 
 Lemma mulIr_eq0 x y : rreg x -> (y * x == 0) = (y == 0).
 Proof. exact: (@mulrI_eq0 Rc). Qed.
@@ -1589,7 +1590,8 @@ HB.mixin Record is_Lalgebra_of_Lmodule (R : ringType) V of
 Module LalgExports.
 Definition lalgType_of (R : ringType) (phR : phant R) := Lalgebra.type R.
 Notation lalgType R := (lalgType_of (Phant R)).
-Notation LalgType R T m := (Lalgebra.pack [ringType of R] T m).
+(* BUG: [ringType of R] fails with coqc but succeeds with coqtop *)
+Notation LalgType R T m := (Lalgebra.pack [the ringType of R] T m).
 Notation LalgMixin := Lalgebra.Mixin.
 Notation "[ 'lalgType' R 'of' T 'for' cT ]" :=
   (Lalgebra.clone [the ringType of R] T cT)
@@ -2345,8 +2347,9 @@ Qed.
 
 End LRMorphismTheory.
 
+(* BUG: [ringType of R] fails with coqc but succeeds with coqtop *)
 HB.mixin Record commutative_mul R of Ring R := {
-  mulrC : commutative (@mul [ringType of R])
+  mulrC : commutative (@mul [the ringType of R])
 }.
 #[mathcomp]
 HB.structure Definition ComRing := {R of Ring R & commutative_mul R}.
@@ -2464,7 +2467,8 @@ HB.mixin Record is_Algebra_of_Lalgebra (R : ringType) V of Lalgebra R V := {
 Module AlgExports.
 Definition algType_of (R : ringType) (phR : phant R) := Algebra.type R.
 Notation algType R := (algType_of (Phant R)).
-Notation AlgType R A ax := (Algebra.pack [ringType of R] A ax).
+(* BUG: [ringType of R] fails with coqc but succeeds with coqtop *)
+Notation AlgType R A ax := (Algebra.pack [the ringType of R] A ax).
 Notation "[ 'algType' R 'of' T 'for' cT ]" :=
   (Algebra.clone [the ringType of R] T cT)
   (at level 0, format "[ 'algType'  R  'of'  T  'for'  cT ]")
@@ -2876,7 +2880,10 @@ HB.structure Definition UnitAlgebra R := {V of Algebra R V & UnitRing V}.
 Module UnitAlgebraExports.
 Definition unitAlgType_of (R : ringType) (phR : phant R) := UnitAlgebra.type R.
 Notation unitAlgType R := (unitAlgType_of (Phant R)).
-Notation "[ 'unitAlgType' R 'of' T ]" := (UnitAlgebra.clone [ringType of R] T _)
+
+(* BUG: [ringType of R] fails with coqc but succeeds with coqtop *)
+Notation "[ 'unitAlgType' R 'of' T ]" :=
+  (UnitAlgebra.clone [the ringType of R] T _)
   (at level 0, format "[ 'unitAlgType'  R  'of'  T ]") : form_scope.
 End UnitAlgebraExports.
 HB.export UnitAlgebraExports.
@@ -2887,7 +2894,9 @@ HB.structure Definition ComUnitAlgebra R := {V of ComAlgebra R V & UnitRing V}.
 Module ComUnitAlgebraExports.
 Definition comUnitAlgType_of (R : ringType) (phR : phant R) := ComUnitAlgebra.type R.
 Notation comUnitAlgType R := (comUnitAlgType_of (Phant R)).
-Notation "[ 'comUnitAlgType' R 'of' T ]" := (ComUnitAlgebra.clone [ringType of R] T _)
+(* BUG: [ringType of R] fails with coqc but succeeds with coqtop *)
+Notation "[ 'comUnitAlgType' R 'of' T ]" :=
+  (ComUnitAlgebra.clone [the ringType of R] T _)
   (at level 0, format "[ 'comUnitAlgType'  R  'of'  T ]") : form_scope.
 End ComUnitAlgebraExports.
 HB.export ComUnitAlgebraExports.
@@ -4045,8 +4054,9 @@ Prenex Implicits dnf_rterm.
 Definition integral_domain_axiom (R : ringType) :=
   forall x y : R, x * y = 0 -> (x == 0) || (y == 0).
 
+(* BUG: [ringType of R] fails with coqc but succeeds with coqtop *)
 HB.mixin Record is_integral R of Ring R := {
-  mulf_eq0_subproof : integral_domain_axiom [ringType of R];
+  mulf_eq0_subproof : integral_domain_axiom [the ringType of R];
 }.
 
 #[mathcomp(axiom = "integral_domain_axiom")]
@@ -4193,7 +4203,7 @@ Arguments rregP {R x}.
 Definition field_axiom (R : unitRingType) := forall x : R, x != 0 -> x \in unit.
 
 HB.mixin Record is_field R of UnitRing R := {
-  fieldP : field_axiom [unitRingType of R];
+  fieldP : field_axiom [the unitRingType of R];
 }.
 
 #[mathcomp(axiom = "field_axiom")]
@@ -4243,7 +4253,8 @@ HB.builders Context R of field_of_comring R.
 
 Fact intro_unit (x y : R) : y * x = 1 -> x != 0.
 Proof.
-move=> yx1; apply: contraNneq (@oner_neq0 [ringType of R]) => x0.
+(* BUG: [ringType of R] fails with coqc but succeeds with coqtop *)
+move=> yx1; apply: contraNneq (@oner_neq0 [the ringType of R]) => x0.
 by rewrite -yx1 x0 mulr0.
 Qed.
 
@@ -4639,8 +4650,9 @@ Definition closed_field_axiom (R : ringType) :=
   forall n (P : nat -> R), n > 0 ->
    exists x : R, x ^+ n = \sum_(i < n) P i * (x ^+ i).
 
+(* BUG: [ringType of R] fails with coqc but succeeds with coqtop *)
 HB.mixin Record is_closed_field F of Field F := {
-  solve_monicpoly : closed_field_axiom [ringType of F];
+  solve_monicpoly : closed_field_axiom [the ringType of F];
 }.
 
 (* TODO: put a factory in field/closed_field *)
