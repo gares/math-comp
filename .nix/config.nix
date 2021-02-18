@@ -7,7 +7,6 @@
   select = "coq-8.13";
   inputs."coq-8.13".coqPackages = {
     coq.override.version = "8.13";
-    coq-elpi.override.version = "fix-classification";
     hierarchy-builder.override.version = "master";
   };
   inputs."coq-8.13".ocamlPackages.elpi.override.version = "v1.13.0";

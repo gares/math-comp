@@ -976,60 +976,83 @@ Module Order.
 (* STRUCTURES *)
 (**************)
 
-Module POrder.
-Section ClassDef.
+HB.mixin Record is_POrdered (d : unit) (T : indexed Type) of is_eqType T := {
+  dummy    : let _ := T in let _ := d in unit; (* fixme *)
+  le       : rel T;
+  lt       : rel T;
+  lt_def   : forall x y, lt x y = (y != x) && (le x y);
+  le_refl  : reflexive     le;
+  le_anti  : antisymmetric le;
+  le_trans : transitive    le;
+}.
+#[mathcomp, verbose]
+HB.structure Definition POrder (d : unit) :=
+  { T of Choice T & is_POrdered d T }.
 
-Record mixin_of (T0 : Type) (b : Equality.class_of T0)
-                (T := Equality.Pack b) := Mixin {
+HB.factory Record is_LePOrdered (d : unit) T of is_eqType T := {
+  dummy    : let _ := T in let _ := d in unit; (* fixme *)
+  le       : rel T;
+  le_refl  : reflexive     le;
+  le_anti  : antisymmetric le;
+  le_trans : transitive    le;
+}.
+HB.builders Context (d : unit) (T : indexed Type) of is_LePOrdered d T.
+HB.instance Definition _ := @is_POrdered.Build d T
+  dummy le (fun x y => (y != x) && (le x y))
+  (fun _ _ => erefl) le_refl le_anti le_trans.
+HB.end.
+
+HB.factory Record is_LtLePOrdered (d : unit) T of is_eqType T := {
+  dummy    : let _ := T in let _ := d in unit; (* fixme *)
   le : rel T;
   lt : rel T;
-  _  : forall x y, lt x y = (y != x) && (le x y);
-  _  : reflexive     le;
-  _  : antisymmetric le;
-  _  : transitive    le;
+  le_def   : forall x y, le x y = (x == y) || lt x y;
+  lt_irr   : irreflexive lt;
+  lt_trans : transitive lt;
 }.
+HB.builders Context (d : unit) T of is_LtLePOrdered d T.
 
-Record class_of (T : Type) := Class {
-  base  : Choice.class_of T;
-  mixin : mixin_of base;
+Let le_refl : reflexive le. Proof. by move=> x; rewrite le_def eqxx. Qed.
+
+Let le_anti : antisymmetric le.
+Proof.
+move=> x y; rewrite !le_def [y == _]eq_sym.
+have [//|neq_xy/=] := eqVneq x y => /andP[xy yx].
+by have := lt_trans xy yx; rewrite lt_irr.
+Qed.
+
+Let le_trans : transitive le.
+Proof.
+move=> y x z; rewrite !le_def; case: (eqVneq x y) => [->|]//= neq_xy.
+by case: (eqVneq y z) => /= [<- ->|_ /lt_trans yx /yx ->]; rewrite orbT.
+Qed.
+
+Let lt_def x y : lt x y = (y != x) && (le x y).
+Proof. by rewrite le_def; case: eqVneq => //= ->; rewrite lt_irr. Qed.
+
+HB.instance Definition _ := @is_POrdered.Build d T
+  dummy le lt lt_def le_refl le_anti le_trans.
+
+HB.end.
+
+HB.factory Record is_LtPOrdered (d : unit) T of is_eqType T := {
+  dummy    : let _ := T in let _ := d in unit; (* fixme *)
+  lt       : rel T;
+  lt_irr   : irreflexive lt;
+  lt_trans : transitive  lt;
 }.
+HB.builders Context (d : unit) (T : indexed Type) of is_LtPOrdered d T.
+HB.instance Definition _ := @is_LtLePOrdered.Build d T
+  dummy (fun x y => (x == y) || lt x y) lt (fun _ _ => erefl) lt_irr lt_trans.
+HB.end.
 
-Local Coercion base : class_of >-> Choice.class_of.
-
-Structure type (disp : unit) := Pack { sort; _ : class_of sort }.
-
-Local Coercion sort : type >-> Sortclass.
-
-Variables (T : Type) (disp : unit) (cT : type disp).
-
-Definition class := let: Pack _ c as cT' := cT return class_of cT' in c.
-Definition clone c of phant_id class c := @Pack disp T c.
-Definition clone_with disp' c of phant_id class c := @Pack disp' T c.
-Let xT := let: Pack T _ := cT in T.
-Notation xclass := (class : class_of xT).
-
-Definition pack :=
-  fun bT b & phant_id (Choice.class bT) b =>
-  fun m => Pack disp (@Class T b m).
-
-Definition eqType := @Equality.Pack cT xclass.
-Definition choiceType := @Choice.Pack cT xclass.
-End ClassDef.
-
-Module Exports.
-Coercion base : class_of >-> Choice.class_of.
-Coercion mixin : class_of >-> mixin_of.
-Coercion sort : type >-> Sortclass.
-Coercion eqType : type >-> Equality.type.
-Coercion choiceType : type >-> Choice.type.
-Canonical eqType.
-Canonical choiceType.
-Notation porderType := type.
-Notation POrderType disp T m := (@pack T disp _ _ id m).
-Notation "[ 'porderType' 'of' T 'for' cT ]" := (@clone T _ cT _ id)
+Module POrderExports.
+Notation porderType := POrder.type.
+Notation POrderType disp T m := (POrder.pack disp T m).
+Notation "[ 'porderType' 'of' T 'for' cT ]" := (POrder.clone _ T cT)
   (at level 0, format "[ 'porderType'  'of'  T  'for'  cT ]") : form_scope.
 Notation "[ 'porderType' 'of' T 'for' cT 'with' disp ]" :=
-  (@clone_with T _ cT disp _ id)
+  (POrder.clone disp T cT)
   (at level 0, format "[ 'porderType'  'of'  T  'for'  cT  'with'  disp ]") :
   form_scope.
 Notation "[ 'porderType' 'of' T ]" := [porderType of T for _]
@@ -1037,20 +1060,15 @@ Notation "[ 'porderType' 'of' T ]" := [porderType of T for _]
 Notation "[ 'porderType' 'of' T 'with' disp ]" :=
   [porderType of T for _ with disp]
   (at level 0, format "[ 'porderType'  'of'  T  'with' disp ]") : form_scope.
-End Exports.
-
-End POrder.
-Import POrder.Exports.
-Bind Scope cpo_sort with POrder.sort.
+End POrderExports.
+HB.export POrderExports.
+Bind Scope order_scope with POrder.sort.
 
 Section POrderDef.
 
 Variable (disp : unit) (T : porderType disp).
 
-Definition le : rel T := POrder.le (POrder.class T).
 Local Notation "x <= y" := (le x y) : order_scope.
-
-Definition lt : rel T := POrder.lt (POrder.class T).
 Local Notation "x < y" := (lt x y) : order_scope.
 
 Definition comparable : rel T := fun (x y : T) => (x <= y) || (y <= x).
@@ -1073,8 +1091,8 @@ Variant lt_xor_ge (x y : T) :
   | LtNotGe of x < y  : lt_xor_ge x y x x y y false true
   | GeNotLt of y <= x : lt_xor_ge x y y y x x true false.
 
-Definition min x y := if x < y then x else y.
-Definition max x y := if x < y then y else x.
+Definition min (x y : T) := if x < y then x else y.
+Definition max (x y : T) := if x < y then y else x.
 
 Variant compare (x y : T) :
    T -> T -> T -> T ->
@@ -1189,71 +1207,35 @@ Notation "[ 'arg' 'max_' ( i > i0 ) F ]" := [arg max_(i > i0 | true) F]
    format "[ 'arg'  'max_' ( i  >  i0 ) F ]") : order_scope.
 
 End POSyntax.
+HB.export POSyntax.
 
 Module POCoercions.
 Coercion le_of_leif : leif >-> is_true.
 End POCoercions.
+HB.export POCoercions.
 
-Module Lattice.
-Section ClassDef.
-
-Record mixin_of (T0 : Type) (b : POrder.class_of T0)
-                (T := POrder.Pack tt b) := Mixin {
+HB.mixin Record is_Lattice_of_POrder
+    d (T : indexed Type) of POrder d T := {
   meet : T -> T -> T;
   join : T -> T -> T;
-  _ : commutative meet;
-  _ : commutative join;
-  _ : associative meet;
-  _ : associative join;
-  _ : forall y x, meet x (join x y) = x;
-  _ : forall y x, join x (meet x y) = x;
-  _ : forall x y, (x <= y) = (meet x y == x);
+  meetC : commutative meet;
+  joinC : commutative join;
+  meetA : associative meet;
+  joinA : associative join;
+  joinKI : forall y x, meet x (join x y) = x;
+  meetKU : forall y x, join x (meet x y) = x;
+  le_defI : forall x y, (x <= y) = (meet x y == x);
 }.
+#[mathcomp]
+HB.structure Definition Lattice d := { T of is_Lattice_of_POrder d T & }.
 
-Record class_of (T : Type) := Class {
-  base  : POrder.class_of T;
-  mixin : mixin_of base;
-}.
-
-Local Coercion base : class_of >-> POrder.class_of.
-
-Structure type (disp : unit) := Pack { sort; _ : class_of sort }.
-
-Local Coercion sort : type >-> Sortclass.
-
-Variables (T : Type) (disp : unit) (cT : type disp).
-
-Definition class := let: Pack _ c as cT' := cT return class_of cT' in c.
-Definition clone c of phant_id class c := @Pack disp T c.
-Definition clone_with disp' c of phant_id class c := @Pack disp' T c.
-Let xT := let: Pack T _ := cT in T.
-Notation xclass := (class : class_of xT).
-
-Definition pack :=
-  fun bT b & phant_id (@POrder.class disp bT) b =>
-  fun m => Pack disp (@Class T b m).
-
-Definition eqType := @Equality.Pack cT xclass.
-Definition choiceType := @Choice.Pack cT xclass.
-Definition porderType := @POrder.Pack disp cT xclass.
-End ClassDef.
-
-Module Exports.
-Coercion base : class_of >-> POrder.class_of.
-Coercion mixin : class_of >-> mixin_of.
-Coercion sort : type >-> Sortclass.
-Coercion eqType : type >-> Equality.type.
-Coercion choiceType : type >-> Choice.type.
-Coercion porderType : type >-> POrder.type.
-Canonical eqType.
-Canonical choiceType.
-Canonical porderType.
-Notation latticeType  := type.
-Notation LatticeType T m := (@pack T _ _ _ id m).
-Notation "[ 'latticeType' 'of' T 'for' cT ]" := (@clone T _ cT _ id)
+Module LatticeExports.
+Notation latticeType := Lattice.type.
+Notation LatticeType d T m := (Lattice.pack d T m).
+Notation "[ 'latticeType' 'of' T 'for' cT ]" := (Lattice.clone _ T cT)
   (at level 0, format "[ 'latticeType'  'of'  T  'for'  cT ]") : form_scope.
 Notation "[ 'latticeType' 'of' T 'for' cT 'with' disp ]" :=
-  (@clone_with T _ cT disp _ id)
+  (Lattice.clone disp T cT)
   (at level 0, format "[ 'latticeType'  'of'  T  'for'  cT  'with'  disp ]") :
   form_scope.
 Notation "[ 'latticeType' 'of' T ]" := [latticeType of T for _]
@@ -1261,14 +1243,11 @@ Notation "[ 'latticeType' 'of' T ]" := [latticeType of T for _]
 Notation "[ 'latticeType' 'of' T 'with' disp ]" :=
   [latticeType of T for _ with disp]
   (at level 0, format "[ 'latticeType'  'of'  T  'with' disp ]") : form_scope.
-End Exports.
-End Lattice.
-Export Lattice.Exports.
+End LatticeExports.
+HB.export LatticeExports.
 
 Section LatticeDef.
 Context {disp : unit} {T : latticeType disp}.
-Definition meet : T -> T -> T := Lattice.meet (Lattice.class T).
-Definition join : T -> T -> T := Lattice.join (Lattice.class T).
 
 Variant lel_xor_gt (x y : T) :
   T -> T -> T -> T -> T -> T -> T -> T -> bool -> bool -> Set :=
@@ -1305,12 +1284,15 @@ Variant incomparel (x y : T) :
 
 End LatticeDef.
 
-Module Import LatticeSyntax.
+Module LatticeSyntax.
 
 Notation "x `&` y" := (meet x y) : order_scope.
 Notation "x `|` y" := (join x y) : order_scope.
 
 End LatticeSyntax.
+HB.export LatticeSyntax.
+
+STOP.
 
 Module BLattice.
 Section ClassDef.
