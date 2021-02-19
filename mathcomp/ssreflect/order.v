@@ -976,7 +976,7 @@ Module Order.
 (* STRUCTURES *)
 (**************)
 
-HB.mixin Record is_POrdered (d : unit) (T : indexed Type) of is_eqType T := {
+HB.mixin Record is_POrdered (d : unit) T of is_eqType T := {
   dummy    : let _ := T in let _ := d in unit; (* fixme *)
   le       : rel T;
   lt       : rel T;
@@ -985,25 +985,24 @@ HB.mixin Record is_POrdered (d : unit) (T : indexed Type) of is_eqType T := {
   le_anti  : antisymmetric le;
   le_trans : transitive    le;
 }.
-#[mathcomp, verbose]
+#[mathcomp, verbose] (* fixme: add phant_pack to the list of mathcomp generated stuff *)
 HB.structure Definition POrder (d : unit) :=
   { T of Choice T & is_POrdered d T }.
 
 HB.factory Record is_LePOrdered (d : unit) T of is_eqType T := {
-  dummy    : let _ := T in let _ := d in unit; (* fixme *)
   le       : rel T;
   le_refl  : reflexive     le;
   le_anti  : antisymmetric le;
   le_trans : transitive    le;
 }.
-HB.builders Context (d : unit) (T : indexed Type) of is_LePOrdered d T.
+
+HB.builders Context (d : unit) T of is_LePOrdered d T.
+(* TODO: print nice error message when keyed type is not provided *)
 HB.instance Definition _ := @is_POrdered.Build d T
-  dummy le (fun x y => (y != x) && (le x y))
-  (fun _ _ => erefl) le_refl le_anti le_trans.
+  tt le _ (fun _ _ => erefl) le_refl le_anti le_trans.
 HB.end.
 
 HB.factory Record is_LtLePOrdered (d : unit) T of is_eqType T := {
-  dummy    : let _ := T in let _ := d in unit; (* fixme *)
   le : rel T;
   lt : rel T;
   le_def   : forall x y, le x y = (x == y) || lt x y;
@@ -1031,19 +1030,19 @@ Let lt_def x y : lt x y = (y != x) && (le x y).
 Proof. by rewrite le_def; case: eqVneq => //= ->; rewrite lt_irr. Qed.
 
 HB.instance Definition _ := @is_POrdered.Build d T
-  dummy le lt lt_def le_refl le_anti le_trans.
+  tt le lt lt_def le_refl le_anti le_trans.
 
 HB.end.
 
 HB.factory Record is_LtPOrdered (d : unit) T of is_eqType T := {
-  dummy    : let _ := T in let _ := d in unit; (* fixme *)
   lt       : rel T;
   lt_irr   : irreflexive lt;
   lt_trans : transitive  lt;
 }.
 HB.builders Context (d : unit) (T : indexed Type) of is_LtPOrdered d T.
 HB.instance Definition _ := @is_LtLePOrdered.Build d T
-  dummy (fun x y => (x == y) || lt x y) lt (fun _ _ => erefl) lt_irr lt_trans.
+  _ lt (fun _ _ => erefl) lt_irr lt_trans.
+#[verbose]
 HB.end.
 
 Module POrderExports.
@@ -1214,6 +1213,26 @@ Coercion le_of_leif : leif >-> is_true.
 End POCoercions.
 HB.export POCoercions.
 
+(* HB.mixin Record is_JoinSemiLattice_of_POrder *)
+(*     d (T : indexed Type) of POrder d T := { *)
+(*   join : T -> T -> T; *)
+(*   joinC : commutative join; *)
+(*   joinA : associative join; *)
+(*   le_defU : forall x y, (x <= y) = (join x y == y); *)
+(* }. *)
+(* HB.structure Definition JoinSemiLattice d := *)
+(*   { T of is_JoinSemiLattice_of_POrder d T & POrder d T }. *)
+
+(* HB.mixin Record is_MeetSemiLattice_of_POrder *)
+(*     d (T : indexed Type) of POrder d T := { *)
+(*   meet : T -> T -> T; *)
+(*   meetC : commutative meet; *)
+(*   meetA : associative meet; *)
+(*   le_def : forall x y, (x <= y) = (meet x y == x); *)
+(* }. *)
+(* HB.structure Definition MeetSemiLattice d := *)
+(*   { T of is_MeetSemiLattice_of_POrder d T & POrder d T }. *)
+
 HB.mixin Record is_Lattice_of_POrder
     d (T : indexed Type) of POrder d T := {
   meet : T -> T -> T;
@@ -1224,10 +1243,22 @@ HB.mixin Record is_Lattice_of_POrder
   joinA : associative join;
   joinKI : forall y x, meet x (join x y) = x;
   meetKU : forall y x, join x (meet x y) = x;
-  le_defI : forall x y, (x <= y) = (meet x y == x);
+  le_def : forall x y, (x <= y) = (meet x y == x);
 }.
+(* HB.builders Context d T of is_Lattice_of_POrder d T. *)
+
+(* Let le_defU : forall x y, (x <= y) = (join x y == y). *)
+(* Proof. Admitted. *)
+
+(* HB.instance Definition _ := @is_MeetSemiLattice_of_POrder.Build d T *)
+(*   meet meetC meetA le_def. *)
+(* HB.instance Definition _ := @is_JoinSemiLattice_of_POrder.Build d T *)
+(*   join joinC joinA le_defU. *)
+(* HB.end. *)
+
 #[mathcomp]
-HB.structure Definition Lattice d := { T of is_Lattice_of_POrder d T & }.
+HB.structure Definition Lattice d :=
+  { T of is_Lattice_of_POrder d T & POrder d T }.
 
 Module LatticeExports.
 Notation latticeType := Lattice.type.
@@ -1292,82 +1323,35 @@ Notation "x `|` y" := (join x y) : order_scope.
 End LatticeSyntax.
 HB.export LatticeSyntax.
 
-STOP.
-
-Module BLattice.
-Section ClassDef.
-
-Record mixin_of (T : Type) (b : POrder.class_of T)
-                (T := POrder.Pack tt b) := Mixin {
+HB.mixin Record has_bottom d (T : indexed Type) of POrder d T := {
   bottom : T;
-  _ : forall x, bottom <= x;
+  le0x : forall x, bottom <= x;
 }.
+(* TODO: Restore when we remove the mathcomp attribute *)
+(* HB.structure Definition BPOrder d := { T of has_bottom d T & POrder d T }. *)
+#[mathcomp]
+HB.structure Definition BLattice d := { T of has_bottom d T & Lattice d T }.
 
-Record class_of (T : Type) := Class {
-  base  : Lattice.class_of T;
-  mixin : mixin_of base;
-}.
+Module BLatticeExports.
+Notation bLatticeType := BLattice.type.
+Notation BLatticeType T m := (BLattice.pack _ T m).
+(* Notation "[ 'bLatticeType' 'of' T 'for' cT ]" := (BLattice.clone _ T cT) *)
+(*   (at level 0, format "[ 'bLatticeType'  'of'  T  'for'  cT ]") : form_scope. *)
+(* Notation "[ 'bLatticeType' 'of' T ]" := [bLatticeType of T for _] *)
+(*   (at level 0, format "[ 'bLatticeType'  'of'  T ]") : form_scope. *)
+(* Notation "[ 'bLatticeType' 'of' T 'for' cT 'with' disp ]" := *)
+(*   (@clone_with T _ cT disp _ id) *)
+(*   (at level 0, *)
+(*    format "[ 'bLatticeType'  'of'  T  'for'  cT  'with'  disp ]") : *)
+(*   form_scope. *)
+(* Notation "[ 'bLatticeType' 'of' T 'with' disp ]" := *)
+(*   [bLatticeType of T for _ with disp] *)
+(*   (at level 0, format "[ 'bLatticeType'  'of'  T  'with' disp ]") : *)
+(*   form_scope. *)
+End BLatticeExports.
+HB.export BLatticeExports.
 
-Local Coercion base : class_of >-> Lattice.class_of.
-
-Structure type (disp : unit) := Pack { sort; _ : class_of sort }.
-
-Local Coercion sort : type >-> Sortclass.
-
-Variables (T : Type) (disp : unit) (cT : type disp).
-
-Definition class := let: Pack _ c as cT' := cT return class_of cT' in c.
-Definition clone c of phant_id class c := @Pack disp T c.
-Definition clone_with disp' c of phant_id class c := @Pack disp' T c.
-Let xT := let: Pack T _ := cT in T.
-Notation xclass := (class : class_of xT).
-
-Definition pack :=
-  fun bT b & phant_id (@Lattice.class disp bT) b =>
-  fun m => Pack disp (@Class T b m).
-
-Definition eqType := @Equality.Pack cT xclass.
-Definition choiceType := @Choice.Pack cT xclass.
-Definition porderType := @POrder.Pack disp cT xclass.
-Definition latticeType := @Lattice.Pack disp cT xclass.
-End ClassDef.
-
-Module Exports.
-Coercion base : class_of >-> Lattice.class_of.
-Coercion mixin : class_of >-> mixin_of.
-Coercion sort : type >-> Sortclass.
-Coercion eqType : type >-> Equality.type.
-Coercion choiceType : type >-> Choice.type.
-Coercion porderType : type >-> POrder.type.
-Coercion latticeType : type >-> Lattice.type.
-Canonical eqType.
-Canonical choiceType.
-Canonical porderType.
-Canonical latticeType.
-Notation bLatticeType  := type.
-Notation BLatticeType T m := (@pack T _ _ _ id m).
-Notation "[ 'bLatticeType' 'of' T 'for' cT ]" := (@clone T _ cT _ id)
-  (at level 0, format "[ 'bLatticeType'  'of'  T  'for'  cT ]") : form_scope.
-Notation "[ 'bLatticeType' 'of' T 'for' cT 'with' disp ]" :=
-  (@clone_with T _ cT disp _ id)
-  (at level 0,
-   format "[ 'bLatticeType'  'of'  T  'for'  cT  'with'  disp ]") :
-  form_scope.
-Notation "[ 'bLatticeType' 'of' T ]" := [bLatticeType of T for _]
-  (at level 0, format "[ 'bLatticeType'  'of'  T ]") : form_scope.
-Notation "[ 'bLatticeType' 'of' T 'with' disp ]" :=
-  [bLatticeType of T for _ with disp]
-  (at level 0, format "[ 'bLatticeType'  'of'  T  'with' disp ]") :
-  form_scope.
-End Exports.
-
-End BLattice.
-Export BLattice.Exports.
-
-Definition bottom {disp : unit} {T : bLatticeType disp} : T :=
-  BLattice.bottom (BLattice.class T).
-
-Module Import BLatticeSyntax.
+Module BLatticeSyntax.
 Notation "0" := bottom : order_scope.
 
 Notation "\join_ ( i <- r | P ) F" :=
@@ -1396,82 +1380,26 @@ Notation "\join_ ( i 'in' A ) F" :=
   (\big[@join _ _/0%O]_(i in A) F%O) : order_scope.
 
 End BLatticeSyntax.
+HB.export BLatticeSyntax.
 
-Module TBLattice.
-Section ClassDef.
-
-Record mixin_of (T0 : Type) (b : POrder.class_of T0)
-                (T := POrder.Pack tt b) := Mixin {
+HB.mixin Record has_top d (T : indexed Type) of POrder d T := {
   top : T;
-  _ : forall x, x <= top;
+  lex1 : forall x, x <= top;
 }.
+(* TODO: Restore when we remove the mathcomp attribute *)
+(* HB.structure Definition TPOrder d := { T of has_bottom d T & POrder d T }. *)
+(* HB.structure Definition TLattice d := { T of has_top d T & Lattice d T }. *)
+(* HB.structure Definition TBOrder d := { T of has_top d T & BPOrder d T }. *)
+#[mathcomp]
+HB.structure Definition TBLattice d := { T of has_top d T & BLattice d T }.
 
-Record class_of (T : Type) := Class {
-  base  : BLattice.class_of T;
-  mixin : mixin_of base;
-}.
+Module TBLatticeExports.
+Notation tbLatticeType := TBLattice.type.
+Notation TBLatticeType T m := (TBLattice.pack _ T m).
+End TBLatticeExports.
+HB.export TBLatticeExports.
 
-Local Coercion base : class_of >-> BLattice.class_of.
-
-Structure type (disp : unit) := Pack { sort; _ : class_of sort }.
-
-Local Coercion sort : type >-> Sortclass.
-
-Variables (T : Type) (disp : unit) (cT : type disp).
-
-Definition class := let: Pack _ c as cT' := cT return class_of cT' in c.
-Definition clone c of phant_id class c := @Pack disp T c.
-Definition clone_with disp' c of phant_id class c := @Pack disp' T c.
-Let xT := let: Pack T _ := cT in T.
-Notation xclass := (class : class_of xT).
-
-Definition pack :=
-  fun bT b & phant_id (@BLattice.class disp bT) b =>
-  fun m => Pack disp (@Class T b m).
-
-Definition eqType := @Equality.Pack cT xclass.
-Definition choiceType := @Choice.Pack cT xclass.
-Definition porderType := @POrder.Pack disp cT xclass.
-Definition latticeType := @Lattice.Pack disp cT xclass.
-Definition bLatticeType := @BLattice.Pack disp cT xclass.
-End ClassDef.
-
-Module Exports.
-Coercion base : class_of >-> BLattice.class_of.
-Coercion mixin : class_of >-> mixin_of.
-Coercion sort : type >-> Sortclass.
-Coercion eqType : type >-> Equality.type.
-Coercion choiceType : type >-> Choice.type.
-Coercion porderType : type >-> POrder.type.
-Coercion latticeType : type >-> Lattice.type.
-Coercion bLatticeType : type >-> BLattice.type.
-Canonical eqType.
-Canonical choiceType.
-Canonical porderType.
-Canonical latticeType.
-Canonical bLatticeType.
-Notation tbLatticeType  := type.
-Notation TBLatticeType T m := (@pack T _ _ _ id m).
-Notation "[ 'tbLatticeType' 'of' T 'for' cT ]" := (@clone T _ cT _ id)
-  (at level 0, format "[ 'tbLatticeType'  'of'  T  'for'  cT ]") : form_scope.
-Notation "[ 'tbLatticeType' 'of' T 'for' cT 'with' disp ]" :=
-  (@clone_with T _ cT disp _ id)
-  (at level 0,
-   format "[ 'tbLatticeType'  'of'  T  'for'  cT  'with'  disp ]") : form_scope.
-Notation "[ 'tbLatticeType' 'of' T ]" := [tbLatticeType of T for _]
-  (at level 0, format "[ 'tbLatticeType'  'of'  T ]") : form_scope.
-Notation "[ 'tbLatticeType' 'of' T 'with' disp ]" :=
-  [tbLatticeType of T for _ with disp]
-  (at level 0, format "[ 'tbLatticeType'  'of'  T  'with' disp ]") : form_scope.
-End Exports.
-
-End TBLattice.
-Export TBLattice.Exports.
-
-Definition top disp {T : tbLatticeType disp} : T :=
-  TBLattice.top (TBLattice.class T).
-
-Module Import TBLatticeSyntax.
+Module TBLatticeSyntax.
 
 Notation "1" := top : order_scope.
 
@@ -1501,137 +1429,34 @@ Notation "\meet_ ( i 'in' A ) F" :=
  (\big[meet/1]_(i in A) F%O) : order_scope.
 
 End TBLatticeSyntax.
+HB.export TBLatticeSyntax.
 
-Module DistrLattice.
-Section ClassDef.
-
-Record mixin_of (T0 : Type) (b : Lattice.class_of T0)
-                (T := Lattice.Pack tt b) := Mixin {
-  _ : @left_distributive T T meet join;
+(* TODO: rename to lattice_is_meet_distributive ? *)
+HB.mixin Record is_DistLattice_of_Lattice d (T : indexed Type)
+    of Lattice d T := {
+  meetUl : @left_distributive T T meet join;
 }.
+#[mathcomp]
+HB.structure Definition DistrLattice d := 
+  { T of is_DistLattice_of_Lattice d T & Lattice d T }.
 
-Record class_of (T : Type) := Class {
-  base  : Lattice.class_of T;
-  mixin : mixin_of base;
-}.
+Module DistrLatticeExports.
+Notation distrLatticeType := DistrLattice.type.
+Notation DistrLatticeType T m := (DistrLattice.pack _ T m).
+End DistrLatticeExports.
+HB.export DistrLatticeExports.
 
-Local Coercion base : class_of >-> Lattice.class_of.
+HB.structure Definition BDistrLattice d :=
+  { T of has_bottom d T & DistrLattice d T}.
 
-Structure type (disp : unit) := Pack { sort; _ : class_of sort }.
-
-Local Coercion sort : type >-> Sortclass.
-
-Variables (T : Type) (disp : unit) (cT : type disp).
-
-Definition class := let: Pack _ c as cT' := cT return class_of cT' in c.
-Definition clone c of phant_id class c := @Pack disp T c.
-Definition clone_with disp' c of phant_id class c := @Pack disp' T c.
-Let xT := let: Pack T _ := cT in T.
-Notation xclass := (class : class_of xT).
-
-Definition pack :=
-  fun bT b & phant_id (@Lattice.class disp bT) b =>
-  fun m => Pack disp (@Class T b m).
-
-Definition eqType := @Equality.Pack cT xclass.
-Definition choiceType := @Choice.Pack cT xclass.
-Definition porderType := @POrder.Pack disp cT xclass.
-Definition latticeType := @Lattice.Pack disp cT xclass.
-End ClassDef.
-
-Module Exports.
-Coercion base : class_of >-> Lattice.class_of.
-Coercion mixin : class_of >-> mixin_of.
-Coercion sort : type >-> Sortclass.
-Coercion eqType : type >-> Equality.type.
-Coercion choiceType : type >-> Choice.type.
-Coercion porderType : type >-> POrder.type.
-Coercion latticeType : type >-> Lattice.type.
-Canonical eqType.
-Canonical choiceType.
-Canonical porderType.
-Canonical latticeType.
-Notation distrLatticeType  := type.
-Notation DistrLatticeType T m := (@pack T _ _ _ id m).
-Notation "[ 'distrLatticeType' 'of' T 'for' cT ]" := (@clone T _ cT _ id)
-  (at level 0, format "[ 'distrLatticeType'  'of'  T  'for'  cT ]") :
-  form_scope.
-Notation "[ 'distrLatticeType' 'of' T 'for' cT 'with' disp ]" :=
-  (@clone_with T _ cT disp _ id)
-  (at level 0,
-   format "[ 'distrLatticeType'  'of'  T  'for'  cT  'with'  disp ]") :
-  form_scope.
-Notation "[ 'distrLatticeType' 'of' T ]" := [distrLatticeType of T for _]
-  (at level 0, format "[ 'distrLatticeType'  'of'  T ]") : form_scope.
-Notation "[ 'distrLatticeType' 'of' T 'with' disp ]" :=
-  [latticeType of T for _ with disp]
-  (at level 0, format "[ 'distrLatticeType'  'of'  T  'with' disp ]") :
-  form_scope.
-End Exports.
-
-End DistrLattice.
-Export DistrLattice.Exports.
-
-Module BDistrLattice.
-Section ClassDef.
-
-Record class_of (T : Type) := Class {
-  base  : DistrLattice.class_of T;
-  mixin : BLattice.mixin_of base;
-}.
-
-Local Coercion base : class_of >-> DistrLattice.class_of.
-Local Coercion base2 T (c : class_of T) : BLattice.class_of T :=
-  BLattice.Class (mixin c).
-
-Structure type (disp : unit) := Pack { sort; _ : class_of sort }.
-
-Local Coercion sort : type >-> Sortclass.
-
-Variables (T : Type) (disp : unit) (cT : type disp).
-
-Definition class := let: Pack _ c as cT' := cT return class_of cT' in c.
-Let xT := let: Pack T _ := cT in T.
-Notation xclass := (class : class_of xT).
-
-Definition pack :=
-  fun bT b & phant_id (@DistrLattice.class disp bT) b =>
-  fun mT m & phant_id (@BLattice.class disp mT) (BLattice.Class m) =>
-  Pack disp (@Class T b m).
-
-Definition eqType := @Equality.Pack cT xclass.
-Definition choiceType := @Choice.Pack cT xclass.
-Definition porderType := @POrder.Pack disp cT xclass.
-Definition latticeType := @Lattice.Pack disp cT xclass.
-Definition bLatticeType := @BLattice.Pack disp cT xclass.
-Definition distrLatticeType := @DistrLattice.Pack disp cT xclass.
-Definition nb_distrLatticeType := @DistrLattice.Pack disp bLatticeType xclass.
-End ClassDef.
-
-Module Exports.
-Coercion base : class_of >-> DistrLattice.class_of.
-Coercion base2 : class_of >-> BLattice.class_of.
-Coercion sort : type >-> Sortclass.
-Coercion eqType : type >-> Equality.type.
-Coercion choiceType : type >-> Choice.type.
-Coercion porderType : type >-> POrder.type.
-Coercion latticeType : type >-> Lattice.type.
-Coercion bLatticeType : type >-> BLattice.type.
-Coercion distrLatticeType : type >-> DistrLattice.type.
-Canonical eqType.
-Canonical choiceType.
-Canonical porderType.
-Canonical latticeType.
-Canonical bLatticeType.
-Canonical distrLatticeType.
-Canonical nb_distrLatticeType.
-Notation bDistrLatticeType  := type.
-Notation "[ 'bDistrLatticeType' 'of' T ]" := (@pack T _ _ _ id _ _ id)
+Module BDistrLatticeExports.
+Notation bDistrLatticeType  := BDistrLattice.type.
+Notation "[ 'bDistrLatticeType' 'of' T ]" := (BDistrLattice.clone _ T _)
   (at level 0, format "[ 'bDistrLatticeType'  'of'  T ]") : form_scope.
-End Exports.
+End BDistrLatticeExports.
+HB.export BDistrLatticeExports.
 
-End BDistrLattice.
-Export BDistrLattice.Exports.
+STOP.
 
 Module TBDistrLattice.
 Section ClassDef.
