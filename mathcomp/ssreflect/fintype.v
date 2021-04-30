@@ -1378,6 +1378,11 @@ Definition PcanFinMixin g fK := FinMixin (@pcan_enumP g fK).
 
 Definition CanFinMixin g (fK : cancel f g) := PcanFinMixin (can_pcan fK).
 
+Lemma LockedFinMixin T (E : T = fT :> Type) : IsFinite (locked_type E).
+Proof. by case: fT E => s c /= E; case: _ / E c; apply. Defined.
+
+HB.instance Definition _ T (E : T = fT :> Type) := LockedFinMixin E.
+
 End TransferFinType.
 
 #[mathcomp]

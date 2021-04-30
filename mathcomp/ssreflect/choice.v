@@ -382,10 +382,14 @@ Qed.
 Definition CanChoiceMixin f' (fK : cancel f f') :=
   PcanChoiceMixin (can_pcan fK).
 
+Lemma LockedChoiceMixin (E : sT = T :> Type) : HasChoice (locked_type E).
+Proof. by case: T E => s c /= E; case: _ / E c; apply. Defined.
+
 HB.instance Definition _ f' (fK : pcancel f f') : HasChoice (pcan_type fK) :=
   PcanChoiceMixin fK.
 HB.instance Definition _ f' (fK : cancel f f') : HasChoice (can_type fK) :=
   CanChoiceMixin fK.
+HB.instance Definition _ (E : sT = T :> Type) := LockedChoiceMixin E.
 
 End CanChoice.
 

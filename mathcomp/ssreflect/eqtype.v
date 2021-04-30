@@ -779,6 +779,7 @@ Variables (T T' : Type) (f : T -> T').
 Definition inj_type of injective f : Type := T.
 Definition pcan_type g of pcancel f g : Type := T.
 Definition can_type g of cancel f g : Type := T.
+Definition locked_type of T = T' : Type := T.
 
 End TransferType.
 
@@ -799,6 +800,11 @@ HB.instance Definition _ g (fK : pcancel f g) : HasDecEq (pcan_type fK) :=
 Definition CanEqMixin g (fK : cancel f g) := InjEqMixin (can_inj fK).
 HB.instance Definition _ g (fK : cancel f g) : HasDecEq (can_type fK) :=
   CanEqMixin fK.
+
+Lemma LockedEqMixin (E : T = eT :> Type) : HasDecEq (locked_type E).
+Proof. by case: eT E => s c /= E; case: _ / E c; apply. Defined.
+
+HB.instance Definition _ (E : T = eT :> Type) := LockedEqMixin E.
 
 End TransferEqType.
 
