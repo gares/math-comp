@@ -536,6 +536,12 @@ HB.instance Definition _ T (cntT : IsCountable T) :=
 HB.instance Definition _ T (cntT : IsCountable T) :
   IsCountable (count_type cntT) := cntT.
 
+Lemma LockedCountableMixin T (eT : countType) (E : T = eT :> Type) : IsCountable (locked_type E).
+Proof. by case: eT E => s c /= E; case: _ / E c; apply. Defined.
+  
+HB.instance Definition _ T (eT : countType) (E : T = eT :> Type) :=
+  LockedCountableMixin E.
+
 Section CountableTheory.
 
 Variable T : countType.

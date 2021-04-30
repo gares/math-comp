@@ -1,5 +1,6 @@
 (* (c) Copyright 2006-2016 Microsoft Corporation and Inria.                  *)
 (* Distributed under the terms of CeCILL-B.                                  *)
+From HB Require Import structures.
 From mathcomp Require Import ssreflect ssrbool ssrfun eqtype ssrnat seq div.
 From mathcomp Require Import choice fintype bigop finset prime binomial.
 From mathcomp Require Import fingroup morphism perm automorphism presentation.
@@ -8,7 +9,7 @@ From mathcomp Require Import ssralg finalg zmodp cyclic pgroup center gseries.
 From mathcomp Require Import nilpotent sylow abelian finmodule matrix maximal.
 From mathcomp Require Import extremal.
 
-Unset Kernel Term Sharing.
+(*Unset Kernel Term Sharing.*)
 
 (******************************************************************************)
 (* This file contains the fine structure thorems for extraspecial p-groups.   *)
@@ -77,13 +78,18 @@ apply/morphicP=> /= [[i1 j1] [i2 j2] _ _].
 by rewrite !permE /= mulrDr -addrA (addrCA i2) (addrA i1).
 Qed.
 Definition groupAction := GroupAction gactP.
-
-Fact gtype_key : unit. Proof. by []. Qed.
-Definition gtype := locked_with gtype_key (sdprod_groupType groupAction).
-
-Definition ngtype := ncprod [set: gtype].
-
 End Construction.
+
+HB.lock
+Definition gtype p := sdprod_by (groupAction p).
+
+Lemma fun1 A T E (F : A -> T) : E = F -> E =1 F.
+Proof. by move->. Qed.
+
+HB.instance Definition _ p :=
+  FinGroup.copy (gtype p) (locked_type (fun1 gtype.unlock p)).
+
+Definition ngtype p := ncprod [set: gtype p].
 
 Definition ngtypeQ n := xcprod [set: ngtype 2 n] 'Q_8.
 
@@ -115,7 +121,7 @@ Let p_gt0 := ltnW p_gt1.
 Local Notation gtype := Pextraspecial.gtype.
 Local Notation actp := (Pextraspecial.groupAction p).
 
-Lemma card_pX1p2 : #|p^{1+2}| = (p ^ 3)%N.
+Lemma card_pX1p2 : #| p ^{1+2} | = (p ^ 3)%N.
 Proof.
 rewrite [@gtype _]unlock -(sdprod_card (sdprod_sdpair _)).
 rewrite !card_injm ?injm_sdpair1 ?injm_sdpair2 // !cardsT card_prod card_ord.
@@ -125,7 +131,8 @@ Qed.
 Lemma Grp_pX1p2 :
   p^{1+2} \isog Grp (x : y : (x ^+ p, y ^+ p, [~ x, y, x], [~ x, y, y])).
 Proof.
-rewrite [@gtype _]unlock; apply: intro_isoGrp => [|rT H].
+(*rewrite [@gtype _]unlock; *)
+apply: intro_isoGrp => [|rT H].
   apply/existsP; pose x := sdpair1 actp (0, 1)%R; pose y := sdpair2 actp 1%R.
   exists (x, y); rewrite /= !xpair_eqE; set z := [~ x, y]; set G := _ <*> _.
   have def_z: z = sdpair1 actp (1, 0)%R.

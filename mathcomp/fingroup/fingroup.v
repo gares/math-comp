@@ -3010,4 +3010,16 @@ Notation "[ 'min' A 'of' G | gP & gQ ]" :=
   [min A of G | gP && gQ] : group_scope.
 Notation "[ 'min' G | gP & gQ ]" := [min G | gP && gQ] : group_scope.
 
+Lemma LockedIsBaseMulGroupMixin T (gT : finGroupType) (E : T = gT :> Type) : IsMulBaseGroup (locked_type E).
+Proof. by case: gT E => s c /= E; case: _ / E c; apply. Defined.
+
+HB.instance Definition _ T (gT : finGroupType) (E : T = gT :> Type) :=
+  LockedIsBaseMulGroupMixin E.
+  
+Lemma LockedIsFinGroupMixin T (gT : finGroupType) (E : T = gT :> Type) : BaseFinGroup_IsGroup (locked_type E).
+Proof. by case: gT E => s c /= E; case: _ / E c; apply. Defined.
+
+HB.instance Definition _ T (gT : finGroupType) (E : T = gT :> Type) :=
+  LockedIsFinGroupMixin E.
+
 HB.reexport.
